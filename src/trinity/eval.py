@@ -6,15 +6,17 @@ Reports the relative invariants from SPEC §1.3:
   - random routing (random agent+role each turn) [R4].
 
 Usage:
-    source ~/.config/trinity/secrets.env
-    CUDA_VISIBLE_DEVICES=5 python -m trinity.eval --benchmark math500 \
+    python -m trinity.eval --benchmark math500 \
         --theta experiments/math500/run/best_theta.npy
+Put your API key in `secrets.env` at the repo root or in
+`~/.config/trinity/secrets.env`; the pool loader reads either one automatically.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import os
 import random
 from pathlib import Path
 from statistics import mean
@@ -24,7 +26,8 @@ import yaml
 
 from .coordinator import params as P
 from .coordinator.policy import CoordinatorPolicy
-from .llm.fireworks_client import FireworksPool
+from .coordinator.runtime import resolve_device_dtype
+from .llm.pool_factory import build_pool
 from .orchestration import reward as R
 from .orchestration.dataset import load_tasks
 from .orchestration.session import run_trajectory
@@ -48,12 +51,18 @@ async def _score_policy(tasks, policy, pool, pool_models, *, sample, **run_kwarg
     import httpx
 
     async with httpx.AsyncClient() as cli:
-        trajs = await asyncio.gather(
-            *[
-                run_trajectory(t, policy, pool, pool_models, sample=sample, client=cli, **run_kwargs)
-                for t in tasks
-            ]
-        )
+        trajs = []
+        for i, task in enumerate(tasks, start=1):
+            print(f"[eval] TRINITY task {i}/{len(tasks)} id={task.task_id}", flush=True)
+            traj = await run_trajectory(
+                task, policy, pool, pool_models, sample=sample, client=cli, **run_kwargs
+            )
+            trajs.append(traj)
+            print(
+                f"[eval] TRINITY task {i}/{len(tasks)} done turns={len(traj.turns)} "
+                f"score={R.score(traj):.3f}",
+                flush=True,
+            )
     return float(mean(R.score(t) for t in trajs))
 
 
@@ -64,18 +73,23 @@ async def _score_single_model(tasks, pool, model, benchmark, *, max_tokens, reas
     from .roles.prompts import build_messages
 
     async with httpx.AsyncClient() as cli:
-        async def one(task):
+        async def one(task, idx: int):
             msgs = build_messages(Role.WORKER, task.prompt, [])
             res = await pool.chat(model, msgs, max_tokens=max_tokens, temperature=0.0,
                                   reasoning=reasoning, client=cli)
             return R.score_text(benchmark, res.text, task.answer)
 
-        scores = await asyncio.gather(*[one(t) for t in tasks])
+        scores = []
+        for i, task in enumerate(tasks, start=1):
+            print(f"[eval] single::{model} task {i}/{len(tasks)} id={task.task_id}", flush=True)
+            score = await one(task, i)
+            scores.append(score)
+            print(f"[eval] single::{model} task {i}/{len(tasks)} done score={score:.3f}", flush=True)
     return float(mean(scores))
 
 
 async def evaluate(args) -> dict:
-    pool = FireworksPool(args.models)
+    pool = build_pool(args.provider, args.models)
     pool_models = list(pool.models)
     n_models = len(pool_models)
 
@@ -101,10 +115,17 @@ async def evaluate(args) -> dict:
 
     # --- TRINITY trained coordinator (argmax) ---
     cfg = yaml.safe_load(Path(args.config).read_text())["coordinator"]
-    print("[eval] building coordinator on GPU...")
+    device, dtype = resolve_device_dtype(
+        requested_device=args.device,
+        requested_dtype=args.dtype,
+        default_device=cfg.get("device", "cuda:0"),
+        default_dtype=cfg.get("dtype", "bfloat16"),
+        context="eval",
+    )
+    print(f"[eval] building coordinator on {device}/{dtype}...")
     policy, spec = CoordinatorPolicy.build(
-        model_name=cfg["encoder_model"], device=cfg.get("device", "cuda:0"),
-        dtype=cfg.get("dtype", "bfloat16"), target_layer=cfg["svf"]["target_layer"],
+        model_name=cfg["encoder_model"], device=device,
+        dtype=dtype, target_layer=cfg["svf"]["target_layer"],
         svf_matrices=cfg["svf"].get("matrices"), n_models=n_models,
         l2_normalize=cfg["hidden_state"].get("l2_normalize", True),
     )
@@ -141,6 +162,10 @@ def main() -> None:
     ap.add_argument("--theta", required=True, help="path to trained best_theta.npy")
     ap.add_argument("--config", default=str(_REPO / "configs" / "trinity.yaml"))
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))
+    ap.add_argument("--provider", default="fireworks",
+                    choices=["fireworks", "openrouter", "chutes"])
+    ap.add_argument("--device", default="", help="override coordinator device (for example cpu or cuda:0)")
+    ap.add_argument("--dtype", default="", help="override coordinator dtype (for example float32 or bfloat16)")
     ap.add_argument("--max-items", type=int, default=100, dest="max_items")
     ap.add_argument("--single-reps", type=int, default=1, dest="single_reps",
                     help="average each single-model baseline over K runs (cuts nondeterminism noise)")
@@ -149,7 +174,11 @@ def main() -> None:
     ap.add_argument("--reasoning", default="minimal")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="")
+    ap.add_argument("--trace-llm", action="store_true",
+                    help="emit per-request OpenRouter/LLM trace logs")
     args = ap.parse_args()
+    if args.trace_llm:
+        os.environ["TRINITY_TRACE_LLM"] = "1"
     asyncio.run(evaluate(args))
 
 

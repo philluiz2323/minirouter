@@ -52,9 +52,9 @@ async def _run(args) -> int:
     from trinity.fugu.conductor import PromptedConductor
     from trinity.fugu.cost import price_table
     from trinity.fugu.eval import evaluate
-    from trinity.llm.fireworks_client import FireworksPool
+    from trinity.llm.pool_factory import build_pool
 
-    pool = FireworksPool(args.models)
+    pool = build_pool(args.provider, args.models)
     pool_models = list(pool.models)
     conductor = PromptedConductor(
         pool, args.conductor_model, max_tokens=args.conductor_max_tokens
@@ -111,6 +111,8 @@ def main() -> None:
     ap.add_argument("--split", default="test")
     ap.add_argument("--tasks-json", default="", dest="tasks_json")
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))
+    ap.add_argument("--provider", default="fireworks",
+                    choices=["fireworks", "openrouter", "chutes"])
     ap.add_argument("--conductor-model", default="deepseek-v4-pro", dest="conductor_model")
     ap.add_argument("--conductor-max-tokens", type=int, default=1024, dest="conductor_max_tokens")
     ap.add_argument("--max-items", type=int, default=120, dest="max_items")

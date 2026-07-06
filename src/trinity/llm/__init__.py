@@ -1,1 +1,1 @@
-"""LLM pool access (Fireworks AI)."""
+"""LLM pool access (OpenAI-compatible providers)."""

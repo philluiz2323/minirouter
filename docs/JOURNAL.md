@@ -18,6 +18,31 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-06 — OpenRouter null-content response crashed eval  #mistake #fix
+**Context:** local CPU eval on OpenRouter was hanging / crashing after the coordinator loaded.
+**Expected:** `run_trajectory()` should post-process every assistant reply and finish the trajectory.
+**Actual:** one OpenRouter response returned `message.content = null`, and `roles.postprocess.postprocess()`
+called `.strip()` on `None`, raising `AttributeError: 'NoneType' object has no attribute 'strip'`.
+**Root cause:** the client assumed every assistant reply would contain text; OpenRouter can return a
+null content payload for some completions.
+**Fix / decision:** normalize null assistant content to `""` in `OpenAICompatiblePool.chat()` and make
+`postprocess()` accept `None` as an empty string. This keeps eval fail-safe instead of crashing.
+**Follow-up:** rerun the local eval smoke to confirm the trajectory now completes end-to-end.
+
+## 2026-07-06 — Repo-local secrets.env loader added  #decision #repro
+**Context:** the workflow needed to read API keys from a plain env file in the project root, without
+requiring shell `export`.
+**Expected:** a `secrets.env` file with plain `KEY=VALUE` lines should populate the provider keys for
+local runs and remote wrappers should not rely on exported shell vars.
+**Actual:** `src/trinity/envfile.py` now auto-loads `secrets.env` from the repo root, `.env` as a
+fallback, or `~/.config/trinity/secrets.env`; the OpenAI-compatible pool loads that file on startup,
+`scripts/run_remote.sh` no longer forwards keys via `export`, and `.gitignore` blocks `secrets.env`.
+**Root cause:** the previous workflow depended on shell env state instead of a file-backed config.
+**Fix / decision:** keep secrets in a local, ignored env file and let the Python entrypoints read it
+automatically. Plain `KEY=VALUE` lines are supported; existing process env still wins.
+**Follow-up:** if remote GPU jobs need the same keys, place `secrets.env` on the remote checkout or
+use `TRINITY_SECRETS_FILE` there.
+
 ## 2026-06-25 — Constrained decoding fixes parse_rate (1.0), but GRPO has a dead gradient (samples=0)  #repro #finding #decision #gotcha
 
 **Context:** Phase-0 plateaued at parse_rate ~0.047 (format-bound). Added flag-gated constrained

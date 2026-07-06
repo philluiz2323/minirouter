@@ -3,10 +3,11 @@
 One coordinator is trained per benchmark (SPEC §6.1). Each candidate θ is scored
 by the mean binary reward over a freshly-sampled minibatch of `m_cma` train tasks.
 
-Usage (on GPU 5 via scripts/run_remote.sh, or directly):
-    source ~/.config/trinity/secrets.env
-    CUDA_VISIBLE_DEVICES=5 python -m trinity.train --benchmark math500 \
+Usage (on GPU or on CPU fallback if CUDA is unavailable):
+    python -m trinity.train --benchmark math500 \
         --config configs/trinity.yaml --models configs/models.yaml
+Put your API key in `secrets.env` at the repo root or in
+`~/.config/trinity/secrets.env`; the pool loader reads either one automatically.
 """
 from __future__ import annotations
 
@@ -22,7 +23,8 @@ import yaml
 
 from .coordinator import params as P
 from .coordinator.policy import CoordinatorPolicy
-from .llm.fireworks_client import FireworksPool
+from .coordinator.runtime import resolve_device_dtype
+from .llm.pool_factory import build_pool
 from .optim.fitness import FitnessConfig, evaluate_population
 from .optim.sep_cmaes import SepCMAES, default_popsize
 from .orchestration.dataset import load_tasks, sample_minibatch
@@ -67,16 +69,23 @@ async def train(args) -> dict:
     if fitness_cfg.enable_reweight or fitness_cfg.shaping_active:
         print(f"[train] fitness shaping ACTIVE: {fitness_cfg}")
 
-    pool = FireworksPool(args.models)
+    pool = build_pool(args.provider, args.models)
     pool_models = list(pool.models)
     n_models = len(pool_models)
 
     print(f"[train] benchmark={args.benchmark}  pool={pool_models}")
-    print("[train] building coordinator on GPU (this loads Qwen3-0.6B)...")
+    device, dtype = resolve_device_dtype(
+        requested_device=args.device,
+        requested_dtype=args.dtype,
+        default_device=cc.get("device", "cuda:0"),
+        default_dtype=cc.get("dtype", "bfloat16"),
+        context="train",
+    )
+    print(f"[train] building coordinator on {device}/{dtype} (this loads Qwen3-0.6B)...")
     policy, spec = CoordinatorPolicy.build(
         model_name=cc["encoder_model"],
-        device=cc.get("device", "cuda:0"),
-        dtype=cc.get("dtype", "bfloat16"),
+        device=device,
+        dtype=dtype,
         target_layer=cc["svf"]["target_layer"],
         svf_matrices=cc["svf"].get("matrices"),
         n_models=n_models,
@@ -185,6 +194,10 @@ def main() -> None:
     ap.add_argument("--benchmark", required=True, help="math500 | mmlu | gpqa | livecodebench")
     ap.add_argument("--config", default=str(_REPO / "configs" / "trinity.yaml"))
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))
+    ap.add_argument("--provider", default="fireworks",
+                    choices=["fireworks", "openrouter", "chutes"])
+    ap.add_argument("--device", default="", help="override coordinator device (for example cpu or cuda:0)")
+    ap.add_argument("--dtype", default="", help="override coordinator dtype (for example float32 or bfloat16)")
     ap.add_argument("--max-items", type=int, default=256, dest="max_items")
     ap.add_argument("--max-turns", type=int, default=0, dest="max_turns", help="override K")
     ap.add_argument("--max-tokens", type=int, default=4096, dest="max_tokens")

@@ -567,7 +567,7 @@ async def _collect(args) -> int:
     """
     import httpx
 
-    from trinity.llm.fireworks_client import FireworksPool
+    from trinity.llm.pool_factory import build_pool
     from trinity.orchestration import reward as R
     from trinity.orchestration.dataset import load_tasks
     from trinity.roles.prompts import build_messages
@@ -581,7 +581,7 @@ async def _collect(args) -> int:
     raw_path = out_dir / f"oracle_raw_{args.benchmark}{suffix}.jsonl"
     matrix_path = out_dir / f"oracle_matrix_{args.benchmark}{suffix}.json"
 
-    pool = FireworksPool(args.models)
+    pool = build_pool(args.provider, args.models)
     models = list(pool.models)
     tasks = load_tasks(args.benchmark, args.split, max_items=args.max_items, seed=args.seed)
     print(f"[collect] benchmark={args.benchmark} level={args.level} K={args.k} "
@@ -814,6 +814,8 @@ def main() -> None:
     ap.add_argument("--split", default="test",
                     help="dataset split to collect labels on (use 'train' for warm-start labels)")
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))
+    ap.add_argument("--provider", default="fireworks",
+                    choices=["fireworks", "openrouter", "chutes"])
     ap.add_argument("--k", type=int, default=5, help="samples per (query, model)")
     ap.add_argument("--level", default="L0", choices=["L0"],
                     help="reachability level (L0 single-turn Worker; L1/L2 are future)")

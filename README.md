@@ -138,3 +138,38 @@ Tracked exactly from the token ledgers at real Fireworks prices:
 - Core replication and rigorous eval: **$20.89** (deepseek $6.56, glm $6.70, kimi $7.64).
 - Oracle-ceiling diagnostic: **~$14**.
 - Warm-start + shaped-fitness experiment (label collection, retrain, eval): **$27.22**.
+
+## Submitting a final model
+
+Use `submissions/final_model/` as the submit-ready bundle for your final checkpoint and metadata.
+Keep the trained checkpoint and the JSON files together in that folder before packaging it for the
+evaluation backend.
+
+Expected contents:
+
+- `best_theta.npy` - the trained routing head
+- `summary.json` - training summary for the run
+- `history.json` - optional per-generation history
+- `eval.json` - optional local evaluation output
+
+Typical workflow:
+
+```bash
+mkdir -p submissions/final_model
+cp experiments/math500/<run-name>/best_theta.npy submissions/final_model/
+cp experiments/math500/<run-name>/summary.json submissions/final_model/
+cp experiments/math500/<run-name>/history.json submissions/final_model/  # optional
+
+python -m trinity.eval \
+  --benchmark math500 \
+  --theta submissions/final_model/best_theta.npy \
+  --provider openrouter \
+  --models configs/models.openrouter.yaml \
+  --device cpu \
+  --dtype float32 \
+  --out submissions/final_model/eval.json
+
+tar -czf <team-name>_submission.tar.gz -C submissions final_model
+```
+
+Submit the tarball to the evaluation backend or upload it through the competition site.

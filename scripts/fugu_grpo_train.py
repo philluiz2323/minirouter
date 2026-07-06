@@ -95,9 +95,9 @@ async def _run(args) -> int:
     else:
         if args.max_cost_usd <= 0:
             raise SystemExit("paid Fireworks mode requires --max-cost-usd > 0")
-        from trinity.llm.fireworks_client import FireworksPool
+        from trinity.llm.pool_factory import build_pool
 
-        pool = FireworksPool(args.models)
+        pool = build_pool(args.provider, args.models)
         prices = price_table(conductor_local=True)
 
     pool_models = list(pool.models)
@@ -213,6 +213,8 @@ def main() -> None:
     ap.add_argument("--split", default="train")
     ap.add_argument("--tasks-json", default="", dest="tasks_json")
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))
+    ap.add_argument("--provider", default="fireworks",
+                    choices=["fireworks", "openrouter", "chutes"])
     ap.add_argument("--max-items", type=int, default=4, dest="max_items")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--model-name", default="Qwen/Qwen3-0.6B", dest="model_name")

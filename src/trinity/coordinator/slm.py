@@ -23,8 +23,8 @@ so we normalize ``h <- h / ||h||`` to make the logit scale norm-independent.
 
 The forward pass is deterministic: ``eval()`` mode, ``torch.no_grad()``, a fixed
 input, and no sampling. Repeated calls on the same transcript return identical h
-(gate S1). transformers/torch are imported lazily inside this file because the
-local dev machine has no torch/GPU; only the remote H200 box loads the model.
+(gate S1). transformers/torch are imported lazily inside this file because some
+development machines only have CPU; the caller chooses ``cuda:*`` or ``cpu``.
 """
 from __future__ import annotations
 
@@ -58,7 +58,8 @@ class CoordinatorEncoder:
         ``hidden_size=1024``, 28 layers).
     device:
         Torch device string. Defaults to ``"cuda:0"`` which is physical GPU 5 via
-        ``CUDA_VISIBLE_DEVICES=5`` (SPEC §0.1 / config).
+        ``CUDA_VISIBLE_DEVICES=5`` (SPEC §0.1 / config), but ``cpu`` is supported
+        for fallback/debug runs.
     dtype:
         Torch dtype name (``"bfloat16"`` | ``"float16"`` | ``"float32"``).
     l2_normalize:
@@ -84,7 +85,7 @@ class CoordinatorEncoder:
         dtype: str = "bfloat16",
         l2_normalize: bool = True,
     ) -> None:
-        # Lazy, file-local imports: the dev machine has no torch/GPU.
+        # Lazy, file-local imports: some dev machines only have CPU torch.
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 

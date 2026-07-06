@@ -41,6 +41,7 @@ from statistics import mean
 import numpy as np
 
 from ..orchestration import reward as _reward
+from ..orchestration.async_utils import gather_in_batches
 from ..orchestration.session import run_trajectory
 
 __all__ = [
@@ -50,6 +51,8 @@ __all__ = [
     "evaluate_candidate",
     "evaluate_population",
 ]
+
+_BATCH_SIZE = 5
 
 
 # ---------------------------------------------------------------------------
@@ -273,14 +276,15 @@ async def evaluate_candidate(
         # return_exceptions=True so one trajectory that exhausts retries (e.g. a
         # persistent timeout) degrades to reward 0 instead of crashing the whole
         # training run. The optimizer treats it as a (slightly pessimistic) sample.
-        trajs = await asyncio.gather(
-            *[
+        trajs = await gather_in_batches(
+            [
                 run_trajectory(
                     task, policy, pool, pool_models, sample=sample, client=client,
                     max_turns=max_turns, **run_kwargs,
                 )
                 for task in minibatch
             ],
+            batch_size=_BATCH_SIZE,
             return_exceptions=True,
         )
     finally:

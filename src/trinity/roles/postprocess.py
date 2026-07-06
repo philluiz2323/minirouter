@@ -23,7 +23,7 @@ __all__ = ["postprocess", "ELISION_MARKER"]
 ELISION_MARKER = "\n... [truncated] ...\n"
 
 
-def postprocess(raw: str, role: Role, max_chars: int = 8000) -> str:
+def postprocess(raw: str | None, role: Role, max_chars: int = 8000) -> str:
     """Post-process a raw model output into the transcript output ``O_k``.
 
     Pass-through with light head+tail truncation (SPEC §4.5). The ``role`` is
@@ -43,7 +43,7 @@ def postprocess(raw: str, role: Role, max_chars: int = 8000) -> str:
     """
     del role  # Unused today; kept for a stable, role-aware public signature.
 
-    text = raw.strip()
+    text = "" if raw is None else raw.strip()
     if max_chars <= 0 or len(text) <= max_chars:
         return text
 

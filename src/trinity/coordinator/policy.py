@@ -5,9 +5,10 @@ A policy is configured by a flat parameter vector θ (the thing sep-CMA-ES optim
 into the live torch modules; `decide(transcript_text)` then runs the SLM forward, reads
 the penultimate hidden state, and selects (agent_idx, role).
 
-This module imports torch/transformers and only runs on the GPU box. The orchestration
-session loop does NOT import torch — it just calls `policy.decide(...)`, so the loop can
-be tested with a mock policy off-GPU (smoke test S4).
+This module imports torch/transformers and runs wherever those dependencies are
+available. The orchestration session loop does NOT import torch — it just calls
+`policy.decide(...)`, so the loop can be tested with a mock policy off-device
+(smoke test S4).
 """
 from __future__ import annotations
 
@@ -38,10 +39,10 @@ class CoordinatorPolicy:
         n_roles: int = 3,
         l2_normalize: bool = True,
     ) -> tuple["CoordinatorPolicy", _params.ParamSpec]:
-        """Load Qwen3-0.6B on the GPU, wrap SVF, build the head, return (policy, spec).
+        """Load Qwen3-0.6B, wrap SVF, build the head, return (policy, spec).
 
-        Only call on the GPU box. The real SVF scale count is read from the loaded
-        checkpoint (NOT hardcoded) — the spec is built from it.
+        The real SVF scale count is read from the loaded checkpoint (NOT hardcoded)
+        — the spec is built from it.
         """
         from .head import LinearHead
         from .slm import CoordinatorEncoder

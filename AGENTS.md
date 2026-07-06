@@ -83,9 +83,11 @@ if it were public.
 
 - The **SSH private key** lives at `~/.ssh/trinity_gpu` (perms `600`), referenced only by the
   `trinity-gpu` host alias in `~/.ssh/config`. It is never copied into the project tree.
-- The **Fireworks API key** lives at `~/.config/trinity/secrets.env` (perms `600`), outside the
-  repo. Code reads it from the `FIREWORKS_API_KEY` environment variable.
-- Before running anything: `source ~/.config/trinity/secrets.env`.
+- The API key may live in repo-root `secrets.env` (ignored by git) or in
+  `~/.config/trinity/secrets.env` (perms `600`). Code auto-loads either file and reads the
+  provider key from the environment.
+- Before running anything: make sure one of those files exists, or set the env var in the
+  current process some other way.
 - `.gitignore` blocks `.env`, `*.key`, `*.pem`, `*trinity_gpu*`, `secrets.env`, `*token*`, etc.
   as defense-in-depth. **Run `git diff --cached` before every commit** and abort if any secret
   appears.
@@ -151,8 +153,7 @@ the work — not as an afterthought.
 ## 7. How to run (filled in as modules land)
 
 ```bash
-# 0. load secrets (never committed)
-source ~/.config/trinity/secrets.env
+# 0. load secrets (never committed); repo-root `secrets.env` is auto-loaded too
 
 # 1. sanity: confirm the three Fireworks models answer
 python -m trinity.llm.fireworks_client --selftest

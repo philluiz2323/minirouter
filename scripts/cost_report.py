@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""TRINITY Fireworks cost tracker.
+"""TRINITY cost tracker.
 
 Two modes:
-  --ledger PATH   Exact: sum token usage recorded by FireworksPool (set
+  --ledger PATH   Exact: sum token usage recorded by the pool client (set
                   TRINITY_COST_LEDGER=PATH when running train/eval).
   --estimate      Approximate: estimate calls/tokens/cost from run configs, for runs
                   that happened BEFORE the ledger existed (the early pilots + the
@@ -11,7 +11,7 @@ Two modes:
 Fireworks has no usable billing API for this key (we probed: /v1/usage 404,
 /v1/accounts/usage 403). But every chat response carries exact token counts, so we
 price from tokens. PRICES below are ASSUMPTIONS — replace with the real per-model
-Fireworks rates to get exact dollars; pass --in/--out to override the blended rate.
+rates to get exact dollars; pass --in/--out to override the blended rate.
 
     python scripts/cost_report.py --estimate
     TRINITY_COST_LEDGER=~/trinity/cost_ledger.jsonl python -m trinity.train ...
@@ -23,16 +23,23 @@ import argparse
 import json
 import sys
 
-# ---- Fireworks serverless prices ($ per 1M tokens), (input, output). ----
-# Real rates from Fireworks pricing (web search, June 2026):
-#   deepseek-v4-pro $1.74 in / $3.48 out ($0.145 cached in)
-#   kimi-k2p6 (K2.6) $0.95 in / $4.00 out ($0.16 cached in)
-#   glm-5p2: GLM 5.1 listed at $1.40 / $4.40 — used as proxy for GLM 5.2 (5.2 not separately listed).
-# Cached input tokens get ~50% off; we ignore caching here (slight over-estimate).
+# ---- Provider/model prices ($ per 1M tokens), (input, output). ----
+# Prices used by the current minirouter config:
+#   fireworks:*   -> original Fireworks pool rates
+#   openrouter:*  -> OpenRouter DeepSeek / Kimi / GLM rates
+#   chutes:*      -> Chutes DeepSeek / Kimi / GLM TEE rates
+# Cached input tokens get ~50% off on some providers; we ignore caching here.
 PRICES = {
-    "deepseek-v4-pro": (1.74, 3.48),
-    "glm-5p2":         (1.40, 4.40),
-    "kimi-k2p6":       (0.95, 4.00),
+    "fireworks:deepseek-v4-pro": (1.74, 3.48),
+    "fireworks:glm-5p2":         (1.40, 4.40),
+    "fireworks:kimi-k2p6":       (0.95, 4.00),
+    "openrouter:deepseek-v4-pro": (0.435, 0.87),
+    "openrouter:kimi-k2p6":       (0.66, 3.50),
+    "chutes:glm-5p2":             (1.40, 4.40),
+    # Backward-compatible fallbacks for older ledgers without provider tags.
+    "deepseek-v4-pro":            (1.74, 3.48),
+    "kimi-k2p6":                  (0.95, 4.00),
+    "glm-5p2":                    (1.40, 4.40),
 }
 _DEFAULT_BLENDED_IN = sum(p[0] for p in PRICES.values()) / len(PRICES)
 _DEFAULT_BLENDED_OUT = sum(p[1] for p in PRICES.values()) / len(PRICES)
@@ -43,7 +50,7 @@ def cost(prompt_tok: int, completion_tok: int, in_rate: float, out_rate: float) 
 
 
 def report_ledger(path: str) -> None:
-    per = {}  # model -> [prompt, completion, calls]
+    per = {}  # provider:model -> [prompt, completion, calls]
     with open(path) as f:
         for line in f:
             line = line.strip()
@@ -54,19 +61,21 @@ def report_ledger(path: str) -> None:
             except json.JSONDecodeError:
                 continue
             m = r.get("m", "?")
-            acc = per.setdefault(m, [0, 0, 0])
+            provider = r.get("provider")
+            key = f"{provider}:{m}" if provider else m
+            acc = per.setdefault(key, [0, 0, 0])
             acc[0] += r.get("p", 0)
             acc[1] += r.get("c", 0)
             acc[2] += 1
     total = 0.0
-    print(f"{'model':18s} {'calls':>8s} {'prompt_tok':>12s} {'compl_tok':>12s} {'$':>9s}")
-    print("-" * 64)
+    print(f"{'model':28s} {'calls':>8s} {'prompt_tok':>12s} {'compl_tok':>12s} {'$':>9s}")
+    print("-" * 74)
     for m, (p, c, n) in sorted(per.items()):
-        ir, orr = PRICES.get(m, (_DEFAULT_BLENDED_IN, _DEFAULT_BLENDED_OUT))
+        ir, orr = PRICES.get(m, PRICES.get(m.split(":", 1)[-1], (_DEFAULT_BLENDED_IN, _DEFAULT_BLENDED_OUT)))
         d = cost(p, c, ir, orr)
         total += d
-        print(f"{m:18s} {n:8d} {p:12d} {c:12d} {d:9.3f}")
-    print("-" * 64)
+        print(f"{m:28s} {n:8d} {p:12d} {c:12d} {d:9.3f}")
+    print("-" * 74)
     print(f"{'TOTAL (exact tokens, ASSUMED prices)':40s} ${total:.2f}")
 
 
