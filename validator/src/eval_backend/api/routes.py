@@ -156,24 +156,40 @@ async def submit(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     team_name: str | None = None,
+    repo_full_name: str | None = Form(None),
+    pr_number: int | None = Form(None),
+    head_sha: str | None = Form(None),
     settings: Settings = Depends(get_settings),
 ) -> SubmissionCreateResponse:
     session = get_session(request)
     try:
         submission_id = str(uuid4())
         artifact = store_upload(file, settings, submission_id)
-        submission = Submission(
-            id=submission_id,
-            source="upload",
-            team_name=_safe_team_name(request, team_name),
-            artifact_name=artifact.name,
-            artifact_path=str(artifact.path),
-            artifact_sha256=artifact.sha256,
-            checkpoint_path=str(artifact.checkpoint_path) if artifact.checkpoint_path else None,
-            benchmark=settings.eval_benchmark,
-            status="queued",
-        )
-        session.add(submission)
+        if repo_full_name and pr_number is not None:
+            submission = create_pr_submission(
+                session,
+                settings,
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+                head_sha=head_sha,
+                team_name=_safe_team_name(request, team_name),
+                artifact=artifact,
+            )
+            submission.benchmark = settings.eval_benchmark
+            submission.status = "queued"
+        else:
+            submission = Submission(
+                id=submission_id,
+                source="upload",
+                team_name=_safe_team_name(request, team_name),
+                artifact_name=artifact.name,
+                artifact_path=str(artifact.path),
+                artifact_sha256=artifact.sha256,
+                checkpoint_path=str(artifact.checkpoint_path) if artifact.checkpoint_path else None,
+                benchmark=settings.eval_benchmark,
+                status="queued",
+            )
+            session.add(submission)
         session.flush()
         session.commit()
 

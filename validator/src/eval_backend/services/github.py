@@ -58,8 +58,19 @@ def create_pr_submission(
     existing = _submission_query(session, repo_full_name, pr_number)
     if existing is not None:
         existing.team_name = team_name or existing.team_name
+        changed = False
         if head_sha and head_sha != existing.head_sha:
             existing.head_sha = head_sha
+            changed = True
+        if artifact is not None:
+            existing.artifact_name = artifact.name
+            existing.artifact_path = str(artifact.path)
+            existing.artifact_sha256 = artifact.sha256
+            existing.checkpoint_path = (
+                str(artifact.checkpoint_path) if artifact.checkpoint_path else None
+            )
+            changed = True
+        if changed:
             existing.status = "queued"
             existing.latest_score = None
             existing.best_run_id = None

@@ -8,7 +8,6 @@ validator, worker, and API live alongside the router code. Use the repo-root
 ## What it does
 
 - accepts PR webhooks from the miner repo
-- accepts packaged miner submissions from `POST /webhooks/github/submission`
 - accepts direct archive uploads from the frontend `/submit` form
 - stores submission metadata and artifact hashes in a database
 - runs a configurable evaluation command against a checkpoint
@@ -79,8 +78,8 @@ The webhook intake is idempotent for repeated events on the same PR, and the wor
 queued submission at a time.
 
 The PR workflow now uploads `submissions/final_model/` as a tarball to
-`/webhooks/github/submission`, which stores the archive, extracts `best_theta.npy`, and queues the
-submission for evaluation.
+`POST /submit`, which stores the archive, extracts `best_theta.npy`, and queues the submission for
+evaluation.
 
 To enable automatic merge after evaluation, set `GITHUB_AUTO_MERGE_SUBMISSIONS=true`.
 To keep only the PR comment and skip auto-merge, leave it `false`.
