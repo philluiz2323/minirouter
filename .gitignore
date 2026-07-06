@@ -11,3 +11,12 @@ web/dist/
 web/.vite/
 web/.env
 web/.env.*
+validator/data/
+validator/workspace/
+validator/.venv/
+validator/.pytest_cache/
+validator/dist/
+validator/build/
+validator/secrets.env
+validator/.env
+validator/.env.*

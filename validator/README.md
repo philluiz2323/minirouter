@@ -2,7 +2,8 @@
 
 Backend service for PR intake, checkpoint evaluation, and leaderboard storage for the
 MiniRouter competition. This subtree is copied into the main `minirouter` repo so the
-validator, worker, and API live alongside the router code.
+validator, worker, and API live alongside the router code. Use the repo-root
+`secrets.env` for both the router and the validator.
 
 ## What it does
 
@@ -53,7 +54,7 @@ Set `EVAL_RESULT_POINTER=results.TRINITY` if the command writes JSON like the cu
 For local fallback, point `MINIROUTER_REPO_DIR` at a local checkout of the miner repo.
 For remote execution, set `TRINITY_GPU_HOST`, `TRINITY_REMOTE_DIR`, and
 `TRINITY_REMOTE_WORKSPACE_ROOT` to the SSH host alias, remote repo checkout, and
-remote temp workspace root. The remote box should have its own `secrets.env` too.
+remote temp workspace root. The remote box should have its own repo-root `secrets.env` too.
 
 The runner does not duplicate evaluation logic. It shells out to `python -m trinity.eval`
 from the copied `minirouter` repository, so the benchmark code stays in one place.
@@ -61,11 +62,12 @@ from the copied `minirouter` repository, so the benchmark code stays in one plac
 ## Local run
 
 ```bash
-cp secrets.env.example secrets.env
 python -m venv .venv
 .venv/bin/pip install -e .
 uvicorn eval_backend.main:app --reload
 python -m eval_backend.worker --loop
 ```
+
+For workflow smoke checks, set `EVAL_MAX_ITEMS=1` in the repo-root `secrets.env`.
 
 The public website can read `GET /api/leaderboard` and `GET /api/submissions/{id}`.

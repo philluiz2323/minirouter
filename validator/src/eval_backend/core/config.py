@@ -7,7 +7,7 @@ from typing import Iterable
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[4]
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -105,10 +105,9 @@ class Settings:
     @classmethod
     def load(cls) -> "Settings":
         root = _repo_root()
-        candidate_files = [Path.cwd() / "secrets.env", root / "secrets.env"]
         trinity_secrets = os.environ.get("TRINITY_SECRETS_FILE", "").strip()
-        if trinity_secrets:
-            candidate_files.append(Path(trinity_secrets))
+        candidate_files = [Path(trinity_secrets)] if trinity_secrets else []
+        candidate_files.append(root / "secrets.env")
         env_path = _first_existing(candidate_files)
         file_values = _parse_env_file(env_path) if env_path else {}
 
