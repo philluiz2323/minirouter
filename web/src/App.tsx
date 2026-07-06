@@ -5,6 +5,7 @@ import Home from './pages/Home'
 import Leaderboard from './pages/Leaderboard'
 import Rules from './pages/Rules'
 import Submit from './pages/Submit'
+import Submission from './pages/Submission'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/rules" element={<Rules />} />
             <Route path="/submit" element={<Submit />} />
+            <Route path="/submission/:id" element={<Submission />} />
           </Routes>
         </main>
         <Footer />

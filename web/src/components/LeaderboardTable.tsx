@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
+import { Link } from 'react-router-dom'
 import { useLeaderboard } from '../hooks/useLeaderboard'
 
 export default function LeaderboardTable() {
@@ -112,14 +113,12 @@ export default function LeaderboardTable() {
                         {entry.report === '#' ? (
                           <span className="text-xs text-text-dim">Pending</span>
                         ) : (
-                          <a
-                            href={entry.report}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <Link
+                            to={entry.report}
                             className="text-xs font-medium text-accent-light hover:text-accent-light/80"
                           >
                             View
-                          </a>
+                          </Link>
                         )}
                       </td>
                     </tr>

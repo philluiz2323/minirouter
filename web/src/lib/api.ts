@@ -39,6 +39,7 @@ interface BackendLeaderboardResponse {
 function normalizeLeaderboardEntry(entry: BackendLeaderboardEntry): LeaderboardEntry {
   return {
     rank: entry.rank,
+    submission_id: entry.submission_id,
     team: entry.team,
     accuracy: entry.accuracy,
     gsm8k: entry.gsm8k,
@@ -48,7 +49,7 @@ function normalizeLeaderboardEntry(entry: BackendLeaderboardEntry): LeaderboardE
     bbh: entry.bbh,
     params: entry.params,
     submitted: entry.submitted,
-    report: apiUrl(entry.report),
+    report: `/submission/${entry.submission_id}`,
     status: entry.status,
   }
 }
@@ -66,4 +67,54 @@ export async function fetchLeaderboard(limit = 100): Promise<LeaderboardEntry[]>
 
   const payload = (await response.json()) as BackendLeaderboardResponse
   return payload.items.map(normalizeLeaderboardEntry)
+}
+
+interface BackendEvaluationOut {
+  id: number
+  submission_id: string
+  status: string
+  score: number | null
+  metrics: Record<string, unknown>
+  command: string | null
+  stdout: string | null
+  stderr: string | null
+  results_path: string | null
+  error: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
+
+interface BackendSubmissionOut {
+  id: string
+  source: string
+  team_name: string | null
+  repo_full_name: string | null
+  pr_number: number | null
+  head_sha: string | null
+  artifact_name: string
+  artifact_path: string
+  artifact_sha256: string
+  checkpoint_path: string | null
+  benchmark: string
+  status: string
+  latest_score: number | null
+  best_run_id: number | null
+  created_at: string
+  updated_at: string
+  evaluations: BackendEvaluationOut[]
+}
+
+export async function fetchSubmission(submissionId: string): Promise<BackendSubmissionOut> {
+  const response = await fetch(apiUrl(`/api/submissions/${submissionId}`), {
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Submission request failed with status ${response.status}`)
+  }
+
+  return (await response.json()) as BackendSubmissionOut
 }

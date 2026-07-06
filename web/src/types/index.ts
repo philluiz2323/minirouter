@@ -1,6 +1,7 @@
 export interface LeaderboardEntry {
   rank: number
   team: string
+  submission_id?: string
   accuracy: number | null
   gsm8k: number | null
   mmlu: number | null
