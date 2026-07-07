@@ -135,7 +135,6 @@ def build_submission_summary_markdown(
     submission: Submission,
     evaluation: EvaluationRun,
     *,
-    site_url: str,
     metrics: dict[str, Any] | None = None,
 ) -> str:
     metrics = metrics or {}
@@ -170,8 +169,6 @@ def build_submission_summary_markdown(
         f"| finished | {evaluation.finished_at.isoformat() if evaluation.finished_at else 'n/a'} |",
     ]
 
-    report_url = f"{site_url.rstrip('/')}/#/submission/{submission.id}" if submission.id else None
-
     parts = [
         "### MiniRouter evaluation result",
         "",
@@ -182,9 +179,6 @@ def build_submission_summary_markdown(
 
     if metrics:
         parts.extend(["", "### Metrics", "", _format_metrics_table(metrics)])
-
-    if report_url:
-        parts.extend(["", f"[Open the submission report]({report_url})"])
 
     if evaluation.error:
         parts.extend(["", "### Error", "", f"`{evaluation.error}`"])
@@ -271,7 +265,7 @@ async def publish_submission_result(
             except Exception:
                 metrics = {}
 
-    body = build_submission_summary_markdown(submission, run, site_url=settings.public_site_url, metrics=metrics)
+    body = build_submission_summary_markdown(submission, run, metrics=metrics)
 
     try:
         if settings.github_post_comment_on_eval:

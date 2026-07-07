@@ -223,42 +223,6 @@ jobs:
               throw new Error(`Timed out waiting for submission ${submissionId}`)
             }
 
-            const evaluations = submission.evaluations || []
-            const best = evaluations
-              .slice()
-              .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0]
-
-            const scoreText =
-              submission.latest_score == null
-                ? 'pending'
-                : `${(submission.latest_score * 100).toFixed(2)}%`
-
-            let body = `### MiniRouter evaluation result\n\n`
-            body += `Submission \`${submission.id}\` for **${submission.team_name || submission.repo_full_name || 'unknown'}** has status **${submission.status}**.\n\n`
-            body += `| field | value |\n| --- | --- |\n`
-            body += `| benchmark | \`${submission.benchmark}\` |\n`
-            body += `| phase | \`${submission.current_phase || 'n/a'}\` |\n`
-            body += `| progress | ${submission.current_progress_current ?? 'n/a'}/${submission.current_progress_total ?? 'n/a'} |\n`
-            body += `| score | ${scoreText} |\n`
-            body += `| evaluations | ${evaluations.length} |\n`
-            body += `| report | [Open the report](${backendBase.replace(/\/+$/, '')}/#/submission/${submission.id}) |\n`
-
-            if (best) {
-              body += `\n### Best run\n\n`
-              body += `| field | value |\n| --- | --- |\n`
-              body += `| run id | ${best.id} |\n`
-              body += `| status | \`${best.status}\` |\n`
-              body += `| score | ${best.score == null ? 'pending' : `${(best.score * 100).toFixed(2)}%`} |\n`
-              body += `| created | ${best.created_at} |\n`
-            }
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr.number,
-              body,
-            })
-
             if (submission.status === 'completed') {
               try {
                 await github.rest.pulls.merge({
