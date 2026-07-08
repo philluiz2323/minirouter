@@ -18,6 +18,22 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-08 — Empty `choices` on a 200 response crashed eval  #mistake #fix
+**Context:** hardening the OpenAI-compatible pool client after the 2026-07-06 null-`content` fix.
+**Expected:** `chat()` returns a `ChatResult` for every HTTP 200 reply and the trajectory continues.
+**Actual:** a provider can return HTTP 200 with an **empty** `choices` list (content-filter / safety
+block) or an `{"error": {...}}` envelope with no `choices` key. `data["choices"][0]` then raised
+`IndexError`/`KeyError` straight out of `chat()`, past the `_Retryable` guard, aborting the whole eval
+run. Same failure class as the null-`content` crash, one layer up.
+**Root cause:** the parser assumed `choices` is always a non-empty list carrying a `message`;
+`raise_for_status()` only catches 4xx/5xx, so a valid-but-empty 200 body slipped through.
+**Fix / decision:** extracted response parsing into a pure `_parse_completion(data, model)` helper and
+made it fail-safe — a missing/empty choice (or missing `message`) yields an empty completion
+(`text=""`, `finish_reason="error"`) while still accounting `usage`, mirroring the null-`content`
+handling. Added `tests/test_pool_parse.py` (7 cases). Scoped to the parsing path only (not the imports)
+so it stays independent of the separate `import sys` --selftest fix (#25).
+**Follow-up:** none — self-contained client-robustness fix.
+
 ## 2026-07-08 — Remote GPU fallback is now explicit and configurable  #mistake #decision #repro
 **Context:** issue #21 flagged that validator remote GPU failures could be hidden when execution silently
 fell back to local CPU and still reported completion.
@@ -115,7 +131,6 @@ docs now point miners at the checker. Tracks issue #3.
 **Fix / decision:** ship a zero-network CLI that validates required files, θ shape against
 `ParamSpec.n_total`, and summary JSON coherency; warn (do not fail) on summary `n_total` drift.
 **Follow-up:** optionally wire the same checks into PR automation before `/submit`.
-
 ## 2026-07-06 — Validator backend moved into repo and eval deduplicated  #decision #repro
 **Context:** the standalone `minirouter-evaluation-service` needed to live inside this repo so
 submission intake, leaderboard storage, and checkpoint evaluation can ship together.
