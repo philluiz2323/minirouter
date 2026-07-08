@@ -18,6 +18,22 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-09 — sep-CMA-ES seed=0 was silently non-reproducible  #mistake #repro
+**Context:** auditing `optim/sep_cmaes.py`; both `SepCMAES` and `trinity.train` default to
+`seed=0` and their docstrings promise reproducible runs.
+**Expected:** two `SepCMAES(..., seed=0)` instances draw the same first population; `run(f, n,
+seed=0)` returns the same result across invocations.
+**Actual:** they differed every time. pycma **ignores `seed==0`** (documented in pycma: "cma
+ignores if seed==0") — it leaves numpy's global RNG unseeded — so the default, reproducible-by-
+contract run was actually random. Confirmed: `np.allclose(SepCMAES(seed=0).ask(), SepCMAES(seed=0).ask())`
+was `False`; nonzero seeds were reproducible.
+**Root cause:** `opts["seed"] = self.seed` forwarded the raw 0, which pycma discards.
+**Fix / decision:** add `effective_seed(seed)` mapping `0` -> a fixed nonzero constant
+(`0x9E3779B1`, within pycma's `[1, 2**32-1]`) and pass every other seed through unchanged, then
+use it when building the pycma opts. Now `seed=0` is deterministic and distinct seeds still
+differ. Added `tests/test_sep_cmaes_seed.py` (cma-gated via `importorskip`).
+**Follow-up:** none; nonzero seeds are unaffected, so existing configs keep their behavior.
+
 ## 2026-07-08 — Remote GPU fallback is now explicit and configurable  #mistake #decision #repro
 **Context:** issue #21 flagged that validator remote GPU failures could be hidden when execution silently
 fell back to local CPU and still reported completion.

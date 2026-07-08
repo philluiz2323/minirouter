@@ -42,6 +42,31 @@ def _import_cma():
         ) from exc
 
 
+# pycma treats ``seed == 0`` as "unseeded" (it does NOT fix numpy's RNG), so a run
+# started with seed 0 is non-reproducible. Our default seed is 0 and the docstrings
+# promise reproducibility, so remap 0 to a fixed nonzero constant. Any other seed is
+# passed through unchanged. 0x9E3779B1 (2654435761) is a fixed nonzero within pycma's
+# valid seed range [1, 2**32 - 1].
+_PYCMA_SEED_FOR_ZERO: int = 0x9E3779B1
+
+
+def effective_seed(seed: int) -> int:
+    """Return a seed pycma will actually apply.
+
+    pycma ignores ``seed == 0`` (leaving numpy's global RNG unseeded), which
+    silently breaks reproducibility. Map ``0`` to a fixed nonzero constant so a
+    ``seed=0`` run is deterministic; pass every other seed through unchanged.
+
+    Args:
+        seed: The requested RNG seed.
+
+    Returns:
+        ``seed`` if it is nonzero, else :data:`_PYCMA_SEED_FOR_ZERO`.
+    """
+    s = int(seed)
+    return s if s != 0 else _PYCMA_SEED_FOR_ZERO
+
+
 def default_popsize(n: int) -> int:
     """Return the CMA-ES default population size ``lambda``.
 
@@ -96,7 +121,9 @@ class SepCMAES:
                 a non-zero identity start is desired).
             popsize: Population size ``lambda``. If None, computed via
                 :func:`default_popsize` (n=13312 -> 33).
-            seed: RNG seed for reproducible sampling.
+            seed: RNG seed for reproducible sampling. ``0`` is remapped to a fixed
+                nonzero value because pycma treats ``seed=0`` as unseeded (see
+                :func:`effective_seed`), so the default is still reproducible.
             maxiter: Maximum number of generations ``T`` (TRINITY default 60).
 
         Raises:
@@ -125,7 +152,9 @@ class SepCMAES:
         opts = {
             "CMA_diagonal": True,
             "popsize": self._popsize,
-            "seed": self.seed,
+            # pycma ignores seed==0 (non-reproducible); map it to a fixed nonzero
+            # so the reproducible default the docstrings promise actually holds.
+            "seed": effective_seed(self.seed),
             "maxiter": self.maxiter,
             "verbose": -9,
         }
