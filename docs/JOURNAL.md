@@ -18,6 +18,17 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-08 — Inline `#` comments in secrets.env values are stripped  #mistake #fix
+**Context:** issue #67 reported that `_parse_env_line()` kept trailing inline comments as part of an
+unquoted value (e.g. `KEY=sk-abc  # note` loaded the comment into the env var).
+**Expected:** unquoted values should drop trailing ` #...` comment text; quoted values should keep `#`
+inside the quotes.
+**Actual:** the parser only skipped full-line comments and returned the raw post-`=` text.
+**Root cause:** `_parse_env_line()` never trimmed inline comment suffixes for unquoted values.
+**Fix / decision:** strip trailing inline comments on unquoted values after quote handling; add regression
+tests in `tests/test_envfile.py`.
+**Follow-up:** none.
+
 ## 2026-07-08 — Remote GPU fallback is now explicit and configurable  #mistake #decision #repro
 **Context:** issue #21 flagged that validator remote GPU failures could be hidden when execution silently
 fell back to local CPU and still reported completion.

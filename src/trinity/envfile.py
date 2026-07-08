@@ -23,6 +23,11 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
     value = value.strip()
     if value and len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         value = value[1:-1]
+    else:
+        # Unquoted values may carry trailing inline comments (`KEY=val  # note`).
+        hash_pos = value.find(" #")
+        if hash_pos != -1:
+            value = value[:hash_pos].rstrip()
     value = os.path.expanduser(os.path.expandvars(value))
     return key, value
 

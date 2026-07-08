@@ -51,6 +51,20 @@ def test_load_env_file_strips_double_quotes(tmp_path, isolated_key):
     assert os.environ[isolated_key] == "hello world"
 
 
+def test_load_env_file_strips_unquoted_inline_comments(tmp_path, isolated_key):
+    path = tmp_path / "secrets.env"
+    path.write_text(f"{isolated_key}=sk-abc123  # production key\n", encoding="utf-8")
+    load_env_file(path)
+    assert os.environ[isolated_key] == "sk-abc123"
+
+
+def test_load_env_file_preserves_hash_inside_quotes(tmp_path, isolated_key):
+    path = tmp_path / "secrets.env"
+    path.write_text(f'{isolated_key}="value # kept"\n', encoding="utf-8")
+    load_env_file(path)
+    assert os.environ[isolated_key] == "value # kept"
+
+
 def test_load_env_file_skips_comments_and_blanks(tmp_path, isolated_key):
     path = tmp_path / "secrets.env"
     path.write_text(
