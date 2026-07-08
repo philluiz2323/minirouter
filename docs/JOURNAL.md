@@ -18,6 +18,8 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+---
+
 ## 2026-07-09 — role prompt assembly unit tests  #decision #repro
 **Context:** ``roles/prompts.py`` implements SPEC §4.4 system contracts and the
 ``render_transcript`` / ``build_messages`` helpers used by the inner loop, but had
@@ -29,6 +31,22 @@ and role-specific system prompts cannot drift silently.
 **Fix / decision:** add offline tests for empty/single/multi-turn transcript rendering,
 verifier verdict surfacing, and OpenAI-style message layout per role.
 **Follow-up:** none.
+
+## 2026-07-08 — Remote GPU fallback is now explicit and configurable  #mistake #decision #repro
+**Context:** issue #21 flagged that validator remote GPU failures could be hidden when execution silently
+fell back to local CPU and still reported completion.
+**Expected:** degraded execution mode should be visible in persisted metrics/reporting, and operators
+should be able to disable fallback for strict remote-only evaluation.
+**Actual:** `evaluate_submission()` captured remote errors but, on local success, finalized as completed
+without explicit fallback metadata; there was no strict-mode switch to fail on remote error.
+**Root cause:** execution-mode provenance and fallback policy were implicit in control flow and not modeled
+as explicit run metadata/config.
+**Fix / decision:** added `EVAL_ALLOW_LOCAL_FALLBACK` config (default true). `eval_runner` now records
+`execution_mode`, `local_fallback`, and `remote_error` in metrics, updates completion messages to indicate
+fallback when used, and fails immediately when remote fails and fallback is disabled. Added unit tests for:
+remote fail + fallback metadata, remote fail + fallback disabled -> failed, and remote success -> no fallback.
+**Follow-up:** if downstream UI/reporting wants stronger signaling, surface `execution_mode` directly as a
+top-level field in submission/evaluation schema.
 
 ## 2026-07-08 — postprocess truncation unit tests  #decision #repro
 **Context:** `roles/postprocess.py` implements SPEC §4.5 head+tail truncation (verdict /
