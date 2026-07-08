@@ -18,6 +18,16 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-08 — envfile loader unit tests  #decision #repro
+**Context:** ``trinity.envfile`` auto-loads ``secrets.env`` for pool clients but had no
+offline tests for comment/export/quote parsing or the "existing env wins" rule.
+**Expected:** parsing quirks should be locked so a malformed line cannot corrupt
+``os.environ`` or override an already-exported key.
+**Actual:** only JOURNAL notes from the original loader landing; no pytest coverage.
+**Root cause:** small utility module shipped without a dedicated test file.
+**Fix / decision:** add ``tests/test_envfile.py`` (tmp-path only; no real secrets read).
+**Follow-up:** none.
+
 ## 2026-07-06 — Validator backend moved into repo and eval deduplicated  #decision #repro
 **Context:** the standalone `minirouter-evaluation-service` needed to live inside this repo so
 submission intake, leaderboard storage, and checkpoint evaluation can ship together.
