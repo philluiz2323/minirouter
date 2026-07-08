@@ -18,6 +18,24 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-08 — results_table single baseline used mean, not per-bench max  #mistake #fix #repro
+**Context:** reading the multi-task summary that `scripts/results_table.py` prints (the paper's
+R1/R2 verdict: TRINITY per-task-best avg vs best fixed single model avg).
+**Expected:** the fixed single baseline should aggregate each benchmark by its *best* eval (max),
+mirroring TRINITY's `max(r["trinity"] ...)` per bench and the code comment on line 74
+("best per-bench single score … max across that bench's evals").
+**Actual:** `single_avg()` aggregated each bench with `sum(bench_vals) / len(bench_vals)` (the mean).
+A model with evals {0.70, 0.90} on math and {0.80, 0.86} on mmlu scored 0.815 (mean) instead of
+0.880 (max). With TRINITY at 0.850 this flipped R1/R2 from `❌` (0.850 < 0.880) to a false
+`✅ HOLDS (0.850 vs 0.815)`.
+**Root cause:** mean-vs-max mismatch between the single baseline and the TRINITY aggregate made the
+headline comparison non-apples-to-apples and biased toward TRINITY — the exact false-positive the
+oracle-ceiling framing is meant to avoid.
+**Fix / decision:** aggregate each bench by `max(bench_vals)` so the single baseline is per-task
+best, matching TRINITY. Added `tests/test_results_table.py` (offline, no GPU/network) covering the
+false-win scenario, the corrected verdict, and a genuine-win sanity case.
+**Follow-up:** none; eval JSON schema and other aggregates unchanged.
+
 ## 2026-07-06 — Validator backend moved into repo and eval deduplicated  #decision #repro
 **Context:** the standalone `minirouter-evaluation-service` needed to live inside this repo so
 submission intake, leaderboard storage, and checkpoint evaluation can ship together.
