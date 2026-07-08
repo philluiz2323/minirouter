@@ -43,6 +43,24 @@ fail-closed config behavior plus invalid/valid auth paths.
 **Follow-up:** if maintainers want a local-dev bypass, add an explicit opt-in env var rather than relying
 on implicit default-secret bypass.
 
+## 2026-07-08 — PR automation queued on docs-only final_model touch  #mistake #gotcha
+**Context:** PR #4 added the offline submission validator and also edited
+`submissions/final_model/README.md`. The `PR automation` workflow uses
+`pull_request_target` and treats any path under `submissions/final_model/` as a
+miner submission.
+**Expected:** feature/docs PR labels as `train`/`docs` and exits without calling `/submit`.
+**Actual:** CI labeled `submission`+`miner`, uploaded the incomplete existing bundle,
+waited ~60 minutes on status `queued`, then failed with
+`Timed out waiting for submission a97348fe-...` (backend worker never advanced it).
+**Root cause:** classification matched README under `final_model/`; combined with the
+`sn74-*` branch prefix that always adds `miner`, `should_queue` became true for a
+non-model change. Also, workflow logic runs from `main` under `pull_request_target`,
+so a workflow fix in the PR head cannot save the current run.
+**Fix / decision:** revert the `final_model/README.md` edit so this PR no longer
+touches artifact paths; queue only when real artifacts change (especially
+`best_theta.npy`), and treat other `final_model/` paths as docs.
+**Follow-up:** after merge, confirm a docs-only `sn74-*` PR no longer hits `/submit`.
+
 ## 2026-07-08 — Local submission bundle validator  #decision #finding
 **Context:** `CONTRIBUTOIN.md` requires miners to ensure `submissions/final_model/` is complete
 before opening a PR, but nothing in-repo checked the bundle offline. Bad artifacts only failed
