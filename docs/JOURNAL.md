@@ -35,6 +35,15 @@ passing `test`/`validation`/`dev` through, then route `_load_mmlu_hf` through it
 split name.
 **Follow-up:** complementary to #7 (fail-loud-on-toy-fallback); this fixes the *reason* the MMLU
 load failed rather than only surfacing it.
+## 2026-07-09 — async batch gather unit tests  #decision #repro
+**Context:** ``orchestration/async_utils.gather_in_batches`` bounds fan-out for large
+benchmark sweeps but had no dedicated offline tests.
+**Expected:** batching should preserve result order, clamp non-positive batch sizes,
+and honor ``return_exceptions`` without launching unbounded concurrency.
+**Actual:** no ``tests/test_async_utils.py`` existed.
+**Root cause:** small async helper shipped without pytest coverage.
+**Fix / decision:** add offline tests using ``asyncio.run`` (no pytest-asyncio plugin).
+**Follow-up:** none.
 ## 2026-07-09 — Leaderboard API excluded real miner submissions  #mistake #decision #repro
 **Context:** issue #48 flagged that `GET /api/leaderboard` never surfaced completed `github_pr` or
 `upload` submissions on the public competition site.
