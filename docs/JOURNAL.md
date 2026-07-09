@@ -18,8 +18,6 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
----
-
 ## 2026-07-09 — role prompt assembly unit tests  #decision #repro
 **Context:** ``roles/prompts.py`` implements SPEC §4.4 system contracts and the
 ``render_transcript`` / ``build_messages`` helpers used by the inner loop, but had
@@ -30,6 +28,14 @@ and role-specific system prompts cannot drift silently.
 **Root cause:** small pure-string module shipped without pytest coverage.
 **Fix / decision:** add offline tests for empty/single/multi-turn transcript rendering,
 verifier verdict surfacing, and OpenAI-style message layout per role.
+## 2026-07-09 — async batch gather unit tests  #decision #repro
+**Context:** ``orchestration/async_utils.gather_in_batches`` bounds fan-out for large
+benchmark sweeps but had no dedicated offline tests.
+**Expected:** batching should preserve result order, clamp non-positive batch sizes,
+and honor ``return_exceptions`` without launching unbounded concurrency.
+**Actual:** no ``tests/test_async_utils.py`` existed.
+**Root cause:** small async helper shipped without pytest coverage.
+**Fix / decision:** add offline tests using ``asyncio.run`` (no pytest-asyncio plugin).
 **Follow-up:** none.
 ## 2026-07-09 — Leaderboard API excluded real miner submissions  #mistake #decision #repro
 **Context:** issue #48 flagged that `GET /api/leaderboard` never surfaced completed `github_pr` or
