@@ -1,3 +1,5 @@
+<img width="1672" height="941" alt="ChatGPT Image Jul 7, 2026, 06_04_14 AM" src="https://github.com/user-attachments/assets/b9184d3e-a3f8-41bb-acca-068dd573f752" />
+
 # MiniRouter
 
 MiniRouter is the **SN74** miner workspace for the **Gittensor** LLM routing competition. This repo was
@@ -187,6 +189,8 @@ mkdir -p submissions/final_model
 cp experiments/math500/<run-name>/best_theta.npy submissions/final_model/
 cp experiments/math500/<run-name>/summary.json submissions/final_model/
 cp experiments/math500/<run-name>/history.json submissions/final_model/  # optional
+
+python utility/validate_submission.py --dir submissions/final_model
 
 python -m trinity.eval \
   --benchmark math500 \
