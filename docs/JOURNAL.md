@@ -18,6 +18,20 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-09 — PR-tagged POST /submit now requires webhook secret  #mistake #decision #repro
+**Context:** follow-up to PR #20 webhook fail-closed auth; PR automation posts miner bundles to
+`POST /submit` with `repo_full_name` + `pr_number` form fields.
+**Expected:** PR-tagged uploads should use the same shared-secret gate as
+`POST /webhooks/github/submission`.
+**Actual:** only the dedicated webhook upload path called `_verify_shared_secret`; `/submit` accepted
+any multipart request with PR metadata and could queue unauthenticated eval work.
+**Root cause:** `/submit` was originally a dual-purpose endpoint (public form + CI upload) and auth
+was only added to the narrower webhook route.
+**Fix / decision:** when `repo_full_name` and `pr_number` are present, `/submit` now requires
+`x-minirouter-webhook-secret`. Plain uploads without PR metadata remain open for the public form.
+PR automation workflow sends the header from `MINIROUTER_WEBHOOK_SECRET`.
+**Follow-up:** none.
+
 ## 2026-07-09 — MMLU training silently trained on the 2-item toy set  #mistake #repro
 **Context:** issue #44 — auditing the data path for `python -m trinity.train --benchmark mmlu`.
 **Expected:** training draws minibatches from the real MMLU dataset.
