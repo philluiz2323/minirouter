@@ -45,7 +45,6 @@ fallback when used, and fails immediately when remote fails and fallback is disa
 remote fail + fallback metadata, remote fail + fallback disabled -> failed, and remote success -> no fallback.
 **Follow-up:** if downstream UI/reporting wants stronger signaling, surface `execution_mode` directly as a
 top-level field in submission/evaluation schema.
-
 ## 2026-07-08 — postprocess truncation unit tests  #decision #repro
 **Context:** `roles/postprocess.py` implements SPEC §4.5 head+tail truncation (verdict /
 final-answer preservation) but had no dedicated offline tests; only an indirect null-content
@@ -127,7 +126,6 @@ docs now point miners at the checker. Tracks issue #3.
 **Fix / decision:** ship a zero-network CLI that validates required files, θ shape against
 `ParamSpec.n_total`, and summary JSON coherency; warn (do not fail) on summary `n_total` drift.
 **Follow-up:** optionally wire the same checks into PR automation before `/submit`.
-
 ## 2026-07-06 — Validator backend moved into repo and eval deduplicated  #decision #repro
 **Context:** the standalone `minirouter-evaluation-service` needed to live inside this repo so
 submission intake, leaderboard storage, and checkpoint evaluation can ship together.
