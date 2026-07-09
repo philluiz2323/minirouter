@@ -35,6 +35,20 @@ passing `test`/`validation`/`dev` through, then route `_load_mmlu_hf` through it
 split name.
 **Follow-up:** complementary to #7 (fail-loud-on-toy-fallback); this fixes the *reason* the MMLU
 load failed rather than only surfacing it.
+## 2026-07-09 — Leaderboard API excluded real miner submissions  #mistake #decision #repro
+**Context:** issue #48 flagged that `GET /api/leaderboard` never surfaced completed `github_pr` or
+`upload` submissions on the public competition site.
+**Expected:** evaluated miner submissions should rank on the public leaderboard alongside any seeded
+demo rows.
+**Actual:** the endpoint filtered with `Submission.source == "seed"`, so only README mock data appeared
+even after real evaluations completed successfully.
+**Root cause:** the seed-data helper (`seed_mock_data.py`) introduced a source tag that the leaderboard
+query treated as the sole visibility filter instead of completed scored submissions.
+**Fix / decision:** query submissions with `status == "completed"` and non-null `latest_score`, ordered
+by score descending. Added `validator/tests/test_leaderboard.py` for mixed seed/real ordering and
+incomplete submission exclusion.
+**Follow-up:** if operators want seed-only demo mode, add an explicit config flag rather than hardcoding
+`source == "seed"`.
 ## 2026-07-08 — pool --selftest crashed with NameError (missing import sys)  #mistake #fix #repro
 **Context:** running the documented pool sanity check
 `python -m trinity.llm.fireworks_client --selftest` (which re-exports
