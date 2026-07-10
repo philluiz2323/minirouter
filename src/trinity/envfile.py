@@ -8,6 +8,34 @@ from pathlib import Path
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def _strip_trailing_env_comment(text: str) -> str:
+    """Drop a trailing inline comment (` # ...`) from an unquoted env value."""
+    pos = text.find(" #")
+    return text[:pos].rstrip() if pos != -1 else text
+
+
+def _parse_env_value(text: str) -> str:
+    """Parse the RHS of a KEY=VALUE line, honoring quotes and inline comments."""
+    text = text.strip()
+    if not text:
+        return text
+    if text[0] not in {"'", '"'}:
+        return _strip_trailing_env_comment(text)
+
+    quote = text[0]
+    i = 1
+    while i < len(text):
+        if text[i] == quote:
+            inner = text[1:i]
+            tail = text[i + 1 :].strip()
+            # After a closed quoted value, only an inline `#` comment may follow.
+            if tail and not tail.startswith("#"):
+                return inner
+            return inner
+        i += 1
+    return _strip_trailing_env_comment(text)
+
+
 def _parse_env_line(line: str) -> tuple[str, str] | None:
     raw = line.strip()
     if not raw or raw.startswith("#"):
@@ -20,14 +48,7 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
     key = key.strip()
     if not _KEY_RE.match(key):
         return None
-    value = value.strip()
-    if value and len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-        value = value[1:-1]
-    else:
-        # Unquoted values may carry trailing inline comments (`KEY=val  # note`).
-        hash_pos = value.find(" #")
-        if hash_pos != -1:
-            value = value[:hash_pos].rstrip()
+    value = _parse_env_value(value)
     value = os.path.expanduser(os.path.expandvars(value))
     return key, value
 
