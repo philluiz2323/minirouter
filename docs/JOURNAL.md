@@ -18,6 +18,22 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-10 — Code grader no longer forwards real HOME to untrusted subprocesses  #mistake #decision #repro
+**Context:** issue #71 reported that LiveCodeBench/BigCodeBench grading executed miner-generated code
+in a subprocess that inherited the operator's real ``HOME``, exposing
+``~/.config/trinity/secrets.env`` to untrusted submissions.
+**Expected:** graded candidate code should run with a private writable home directory and must not be
+able to read API keys from the evaluator's user profile via ``~`` expansion.
+**Actual:** ``_sandbox_env()`` copied ``HOME`` from the parent process, so a malicious solution could
+read and exfiltrate provider credentials.
+**Root cause:** the grader assumed ``subprocess.run`` plus a temp ``cwd`` was a sandbox, but forwarded
+the full user environment including ``HOME``.
+**Fix / decision:** run each graded script under ``python -I`` inside a fresh temp directory used as
+both ``cwd`` and private ``HOME``/``TMPDIR``; stop forwarding the parent ``HOME``. Added
+``tests/test_reward_sandbox.py`` with a leak PoC and a regression for normal stdin/stdout grading.
+**Follow-up:** absolute-path reads of world-readable repo files still need an OS-level sandbox
+(container/bwrap) on hostile validator hosts.
+
 ## 2026-07-09 — Submission eval now batches benchmark items + host alias fixed  #fix #perf #validator
 **Context:** validator submission eval was still processing benchmark items one by one, and the remote
 GPU host field used by the worker did not match the config dataclass.
