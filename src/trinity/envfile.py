@@ -27,13 +27,18 @@ def _parse_env_value(text: str) -> str:
     while i < len(text):
         if text[i] == quote:
             inner = text[1:i]
-            tail = text[i + 1 :].strip()
-            # After a closed quoted value, only an inline `#` comment may follow.
-            if tail and not tail.startswith("#"):
+            tail = text[i + 1 :]
+            if not tail or tail.isspace():
                 return inner
-            return inner
+            rest = tail.lstrip()
+            if rest.startswith("#"):
+                return inner
+            raise ValueError(
+                "quoted env value has trailing non-comment text after closing quote: "
+                f"{text!r}"
+            )
         i += 1
-    return _strip_trailing_env_comment(text)
+    raise ValueError(f"quoted env value is missing a closing quote: {text!r}")
 
 
 def _parse_env_line(line: str) -> tuple[str, str] | None:
@@ -62,8 +67,11 @@ def load_env_file(path: str | Path) -> Path | None:
     p = Path(path).expanduser()
     if not p.exists():
         return None
-    for line in p.read_text().splitlines():
-        parsed = _parse_env_line(line)
+    for lineno, line in enumerate(p.read_text().splitlines(), start=1):
+        try:
+            parsed = _parse_env_line(line)
+        except ValueError as exc:
+            raise ValueError(f"{p}:{lineno}: {exc}") from exc
         if parsed is None:
             continue
         key, value = parsed

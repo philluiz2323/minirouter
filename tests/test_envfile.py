@@ -72,6 +72,20 @@ def test_load_env_file_preserves_hash_inside_quotes(tmp_path, isolated_key):
     assert os.environ[isolated_key] == "value # kept"
 
 
+def test_load_env_file_rejects_quoted_value_with_trailing_garbage(tmp_path, isolated_key):
+    path = tmp_path / "secrets.env"
+    path.write_text(f'{isolated_key}="abc"oops\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="trailing non-comment"):
+        load_env_file(path)
+
+
+def test_load_env_file_rejects_quoted_value_with_trailing_non_comment_text(tmp_path, isolated_key):
+    path = tmp_path / "secrets.env"
+    path.write_text(f'{isolated_key}="abc" garbage\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="trailing non-comment"):
+        load_env_file(path)
+
+
 def test_load_env_file_skips_comments_and_blanks(tmp_path, isolated_key):
     path = tmp_path / "secrets.env"
     path.write_text(
