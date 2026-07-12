@@ -18,6 +18,75 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-11 — fugu/eval banked a tied vote as a solved query (partial credit)  #mistake #repro
+**Context:** `trinity.fugu.eval.evaluate()` emits `per_query_binary`, which feeds `scripts/oracle_ceiling.py` (McNemar test, router-vs-ceiling) — issue #83.
+**Expected:** a per-query "majority" over reps; a 50/50 ballot is not a majority.
+**Actual:** `int(2 * sum(votes) >= len(votes))` scored an exact tie as `1`. `votes=[1,0]` and `[1,1,0,0]` both banked as solved.
+**Root cause:** non-strict `>=`. Reachable via even `--reps`, and also via an odd `--reps` ballot truncated mid-task by the `cap_usd` spend check (records fewer votes than `reps`). Directly contradicts the module's own contract ("a number here cannot be inflated by partial credit") — a coin-flip query banked as 1 *is* partial credit, inflating the router in exactly the comparison oracle_ceiling exists to make trustworthy.
+**Fix / decision:** strict majority `int(2 * sum(votes) > len(votes))`, so a tie resolves to 0 (conservative: ties against the router). Odd complete ballots unaffected. Regression tests in `tests/test_fugu_eval_majority.py` (stub `propose_and_run`/`is_correct`, script the votes).
+**Follow-up:** none.
+
+## 2026-07-09 — PR-tagged POST /submit now requires webhook secret  #mistake #decision #repro
+**Context:** follow-up to PR #20 webhook fail-closed auth; PR automation posts miner bundles to
+`POST /submit` with `repo_full_name` + `pr_number` form fields.
+**Expected:** PR-tagged uploads should use the same shared-secret gate as
+`POST /webhooks/github/submission`.
+**Actual:** only the dedicated webhook upload path called `_verify_shared_secret`; `/submit` accepted
+any multipart request with PR metadata and could queue unauthenticated eval work.
+**Root cause:** `/submit` was originally a dual-purpose endpoint (public form + CI upload) and auth
+was only added to the narrower webhook route.
+**Fix / decision:** when `repo_full_name` and `pr_number` are present, `/submit` now requires
+`x-minirouter-webhook-secret`. Plain uploads without PR metadata remain open for the public form.
+PR automation workflow sends the header from `MINIROUTER_WEBHOOK_SECRET`.
+**Follow-up:** none.
+
+## 2026-07-09 — reward checker unit tests (smoke S5)  #decision #repro
+**Context:** ``orchestration/reward.py`` is the single source of truth for the
+binary reward used by sep-CMA-ES training and eval. SPEC smoke test S5 exercises
+math / choice / code checkers in ``tests/smoke/run_smoke.py``, but there was no
+dedicated pytest module on the PR path.
+**Expected:** known-correct and known-wrong cases for each benchmark family should
+be locked offline so silent grading regressions are caught before they poison
+fitness.
+**Actual:** no ``tests/test_reward_checkers.py`` existed (only partial coverage in
+the smoke CLI and upcoming fix-specific modules).
+**Root cause:** S5 lived only inside the smoke ladder, not in pytest.
+**Fix / decision:** add ``tests/test_reward_checkers.py`` (stdlib only for math/
+choice; subprocess sandbox for code — no torch/GPU/network).
+**Follow-up:** comma-normalization (#35) and final-choice extraction (#29) have
+their own fix PRs; this module covers the baseline S5 contract.
+## 2026-07-10 — Code grader no longer forwards real HOME to untrusted subprocesses  #mistake #decision #repro
+**Context:** issue #71 reported that LiveCodeBench/BigCodeBench grading executed miner-generated code
+in a subprocess that inherited the operator's real ``HOME``, exposing
+``~/.config/trinity/secrets.env`` to untrusted submissions.
+**Expected:** graded candidate code should run with a private writable home directory and must not be
+able to read API keys from the evaluator's user profile via ``~`` expansion.
+**Actual:** ``_sandbox_env()`` copied ``HOME`` from the parent process, so a malicious solution could
+read and exfiltrate provider credentials.
+**Root cause:** the grader assumed ``subprocess.run`` plus a temp ``cwd`` was a sandbox, but forwarded
+the full user environment including ``HOME``.
+**Fix / decision:** run each graded script under ``python -I`` inside a fresh temp directory used as
+both ``cwd`` and private ``HOME``/``TMPDIR``; stop forwarding the parent ``HOME``. Added
+``tests/test_reward_sandbox.py`` with a leak PoC and a regression for normal stdin/stdout grading.
+**Follow-up:** absolute-path reads of world-readable repo files still need an OS-level sandbox
+(container/bwrap) on hostile validator hosts.
+## 2026-07-09 — MMLU training silently trained on the 2-item toy set  #mistake #repro
+**Context:** issue #44 — auditing the data path for `python -m trinity.train --benchmark mmlu`.
+**Expected:** training draws minibatches from the real MMLU dataset.
+**Actual:** every minibatch came from the 2-item MMLU *toy set*, with no error or warning.
+**Root cause:** `train.py` calls `load_tasks(benchmark, "train", ...)`, and `_load_mmlu_hf`
+passed `split="train"` straight to `load_dataset("cais/mmlu", "all", split="train")`. But
+`cais/mmlu` has no `train` split (only `auxiliary_train`, `dev`, `validation`, `test`), so the
+load raised, `_try_load_hf` swallowed it and returned `None`, and `load_tasks` silently fell
+back to `_toy_tasks("mmlu")`. The load failed even with `datasets`+network available. (Eval is
+fine — it requests `"test"`. GPQA/LCB/math500 use split names that exist or map correctly.)
+**Fix / decision:** add `_mmlu_split_for_split` (mirroring `_lcb_version_for_split`) mapping
+`train` -> `auxiliary_train` (MMLU's designated training pool, same row schema as `test`) and
+passing `test`/`validation`/`dev` through, then route `_load_mmlu_hf` through it. Added
+`tests/test_dataset_mmlu_split.py` (offline) asserting the mapping never yields a non-existent
+split name.
+**Follow-up:** complementary to #7 (fail-loud-on-toy-fallback); this fixes the *reason* the MMLU
+load failed rather than only surfacing it.
 ## 2026-07-09 — Submission eval now batches benchmark items + host alias fixed  #fix #perf #validator
 **Context:** validator submission eval was still processing benchmark items one by one, and the remote
 GPU host field used by the worker did not match the config dataclass.
