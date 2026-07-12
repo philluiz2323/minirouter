@@ -327,6 +327,8 @@ def format_hint(benchmark: str) -> str:
     benchmark, matching what :mod:`trinity.orchestration.reward` extracts.
     """
     key = (benchmark or "").strip().lower()
+    if key == "ifeval":
+        return "Follow every instruction exactly and keep the response compliant with all format constraints."
     if key == "rlpr":
         return (
             "Follow the question's expected answer format exactly: use a boxed final answer for math "

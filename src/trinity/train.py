@@ -194,7 +194,7 @@ def main() -> None:
     ap.add_argument(
         "--benchmark",
         required=True,
-        help="math500 | mmlu | gpqa | livecodebench",
+        help="ifeval | math500 | mmlu | gpqa | livecodebench",
     )
     ap.add_argument("--config", default=str(_REPO / "configs" / "trinity.yaml"))
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))

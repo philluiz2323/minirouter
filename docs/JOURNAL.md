@@ -18,6 +18,68 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-07-09 — PR-tagged POST /submit now requires webhook secret  #mistake #decision #repro
+**Context:** follow-up to PR #20 webhook fail-closed auth; PR automation posts miner bundles to
+`POST /submit` with `repo_full_name` + `pr_number` form fields.
+**Expected:** PR-tagged uploads should use the same shared-secret gate as
+`POST /webhooks/github/submission`.
+**Actual:** only the dedicated webhook upload path called `_verify_shared_secret`; `/submit` accepted
+any multipart request with PR metadata and could queue unauthenticated eval work.
+**Root cause:** `/submit` was originally a dual-purpose endpoint (public form + CI upload) and auth
+was only added to the narrower webhook route.
+**Fix / decision:** when `repo_full_name` and `pr_number` are present, `/submit` now requires
+`x-minirouter-webhook-secret`. Plain uploads without PR metadata remain open for the public form.
+PR automation workflow sends the header from `MINIROUTER_WEBHOOK_SECRET`.
+**Follow-up:** none.
+
+## 2026-07-09 — reward checker unit tests (smoke S5)  #decision #repro
+**Context:** ``orchestration/reward.py`` is the single source of truth for the
+binary reward used by sep-CMA-ES training and eval. SPEC smoke test S5 exercises
+math / choice / code checkers in ``tests/smoke/run_smoke.py``, but there was no
+dedicated pytest module on the PR path.
+**Expected:** known-correct and known-wrong cases for each benchmark family should
+be locked offline so silent grading regressions are caught before they poison
+fitness.
+**Actual:** no ``tests/test_reward_checkers.py`` existed (only partial coverage in
+the smoke CLI and upcoming fix-specific modules).
+**Root cause:** S5 lived only inside the smoke ladder, not in pytest.
+**Fix / decision:** add ``tests/test_reward_checkers.py`` (stdlib only for math/
+choice; subprocess sandbox for code — no torch/GPU/network).
+**Follow-up:** comma-normalization (#35) and final-choice extraction (#29) have
+their own fix PRs; this module covers the baseline S5 contract.
+## 2026-07-10 — Code grader no longer forwards real HOME to untrusted subprocesses  #mistake #decision #repro
+**Context:** issue #71 reported that LiveCodeBench/BigCodeBench grading executed miner-generated code
+in a subprocess that inherited the operator's real ``HOME``, exposing
+``~/.config/trinity/secrets.env`` to untrusted submissions.
+**Expected:** graded candidate code should run with a private writable home directory and must not be
+able to read API keys from the evaluator's user profile via ``~`` expansion.
+**Actual:** ``_sandbox_env()`` copied ``HOME`` from the parent process, so a malicious solution could
+read and exfiltrate provider credentials.
+**Root cause:** the grader assumed ``subprocess.run`` plus a temp ``cwd`` was a sandbox, but forwarded
+the full user environment including ``HOME``.
+**Fix / decision:** run each graded script under ``python -I`` inside a fresh temp directory used as
+both ``cwd`` and private ``HOME``/``TMPDIR``; stop forwarding the parent ``HOME``. Added
+``tests/test_reward_sandbox.py`` with a leak PoC and a regression for normal stdin/stdout grading.
+**Follow-up:** absolute-path reads of world-readable repo files still need an OS-level sandbox
+(container/bwrap) on hostile validator hosts.
+## 2026-07-09 — MMLU training silently trained on the 2-item toy set  #mistake #repro
+**Context:** issue #44 — auditing the data path for `python -m trinity.train --benchmark mmlu`.
+**Expected:** training draws minibatches from the real MMLU dataset.
+**Actual:** every minibatch came from the 2-item MMLU *toy set*, with no error or warning.
+**Root cause:** `train.py` calls `load_tasks(benchmark, "train", ...)`, and `_load_mmlu_hf`
+passed `split="train"` straight to `load_dataset("cais/mmlu", "all", split="train")`. But
+`cais/mmlu` has no `train` split (only `auxiliary_train`, `dev`, `validation`, `test`), so the
+load raised, `_try_load_hf` swallowed it and returned `None`, and `load_tasks` silently fell
+back to `_toy_tasks("mmlu")`. The load failed even with `datasets`+network available. (Eval is
+fine — it requests `"test"`. GPQA/LCB/math500 use split names that exist or map correctly.)
+**Fix / decision:** add `_mmlu_split_for_split` (mirroring `_lcb_version_for_split`) mapping
+`train` -> `auxiliary_train` (MMLU's designated training pool, same row schema as `test`) and
+passing `test`/`validation`/`dev` through, then route `_load_mmlu_hf` through it. Added
+`tests/test_dataset_mmlu_split.py` (offline) asserting the mapping never yields a non-existent
+split name.
+**Follow-up:** complementary to #7 (fail-loud-on-toy-fallback); this fixes the *reason* the MMLU
+load failed rather than only surfacing it.
+
 ## 2026-07-09 — Submission eval now batches benchmark items + host alias fixed  #fix #perf #validator
 **Context:** validator submission eval was still processing benchmark items one by one, and the remote
 GPU host field used by the worker did not match the config dataclass.
@@ -47,7 +109,6 @@ HF row parsing, and pass@1 scoring, and update the README to call out LiveCodeBe
 automatic grader description.
 **Follow-up:** if we later wire `configs/benchmarks.yaml` into a runtime loader, the module is now in
 place.
-
 ## 2026-07-09 — role prompt assembly unit tests  #decision #repro
 **Context:** ``roles/prompts.py`` implements SPEC §4.4 system contracts and the
 ``render_transcript`` / ``build_messages`` helpers used by the inner loop, but had
@@ -168,6 +229,20 @@ made it fail-safe — a missing/empty choice (or missing `message`) yields an em
 (`text=""`, `finish_reason="error"`) while still accounting `usage`, mirroring the null-`content`
 handling. Added `tests/test_pool_parse.py` (7 cases). Scoped to the parsing path only (not the imports)
 so it stays independent of the separate `import sys` --selftest fix (#25).
+**Follow-up:** none — self-contained client-robustness fix.
+## 2026-07-08 — Remote eval used nonexistent settings.trinity_gpu_host  #mistake #fix
+**Context:** issue #46 reported that validator remote GPU evaluation failed before SSH with
+`AttributeError: 'Settings' object has no attribute 'trinity_gpu_host'`.
+**Expected:** `_remote_attempt()` should read the configured remote host from `Settings.trinity_remote_host`
+(`TRINITY_GPU_HOST` env).
+**Actual:** `eval_runner.py` referenced `settings.trinity_gpu_host`, which is not defined on `Settings`.
+**Root cause:** field rename/typo — config exposes `trinity_remote_host` but the runner still used the old name.
+**Fix / decision:** replaced both `trinity_gpu_host` references in `eval_runner.py` with
+`trinity_remote_host`; added `validator/tests/test_eval_runner_remote_host.py` to assert SSH host resolution
+uses the real Settings field.
+**Follow-up:** none.
+
+
 ## 2026-07-08 — Remote GPU fallback is now explicit and configurable  #mistake #decision #repro
 **Context:** issue #21 flagged that validator remote GPU failures could be hidden when execution silently
 fell back to local CPU and still reported completion.
@@ -1029,17 +1104,26 @@ Per user request (document everything + structured output):
 - Cost ~$22 (ledger-tracked). No GPU was empty (other tenants), but evals are light (~4 GB) so they
   coexist on a shared H200.
 
-## 2026-07-10 — RLPR benchmark wiring added  #decision #repro
+## 2026-07-10 — IFEval benchmark wiring added  #decision #repro
 
-Implemented a new `rlpr` benchmark loader/facade for the OpenBMB RLPR-Evaluation suite.
+Implemented a new `ifeval` benchmark loader/facade:
+- IFEval loads the official Google Research `input_data.jsonl` and stores `instruction_id_list` +
+  `kwargs` in `Task.answer`.
+- Reward support is routed through `trinity.orchestration.reward.score_text`.
+- The checker is a local deterministic heuristic aligned to the published instruction families
+  (`punctuation`, `keywords`, `length_constraints`, `detectable_format`, `change_case`, `startend`,
+  `combination`).
 
-- The loader reads the seven official parquet files directly from the Hugging Face dataset repo.
-- Each row is converted to a `Task` with the chat prompt flattened into text and the benchmark-specific
-  `ground_truth` stored in `Task.answer`.
-- The reward path routes RLPR items to the existing math or multiple-choice graders based on the source
-  file (`Math-500`, `Minerva`, `AIME2024`, `TheoremQA` vs `MMLUPro`, `gpqa_diamond`, `WebInstruct`).
+The dataset does not publish a separate train/test split, so the loader intentionally treats the file as
+a single logical benchmark set and keeps the split argument for API compatibility.
 
-This suite is mixed-format, so the benchmark itself is the routing layer rather than a single scorer.
+## 2026-07-12 — IFEval review fixes: pinned source + fail-closed language scoring  #fix #repro
+
+The PR review caught two reproducibility/correctness issues:
+- `_IFEVAL_RAW_URL` now points at a pinned Google Research commit instead of `master`, so the benchmark
+  set is stable across runs.
+- `_ifeval_detect_language` now fails closed on detection errors and unsupported languages instead of
+  treating them as correct.
 
 ## 2026-07-12 — RLPR review fixes  #decision #repro
 

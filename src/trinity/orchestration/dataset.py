@@ -11,7 +11,8 @@ Design constraints (see docs/SPEC.md §6, §8):
 - ``load_tasks`` is deterministic given ``seed``: shuffling/truncation use a seeded
   ``random.Random`` so two calls with the same arguments return identical lists.
 - The ``answer`` field is whatever ``reward.score`` needs for that benchmark:
-    * rlpr        -> prompt metadata with source benchmark + ground-truth
+    * ifeval        -> prompt metadata with instruction ids + kwargs
+    * rlpr          -> prompt metadata with source benchmark + ground-truth
     * math500 / aime  -> reference answer string (boxed-answer / last-number match)
     * mmlu / gpqa     -> the correct option LETTER ("A".."D")
     * livecodebench   -> a dict test spec {"tests": [...], "fn_name": ...}
@@ -23,6 +24,7 @@ Public API
 - ``SUPPORTED_BENCHMARKS`` (tuple[str, ...])
 
 The HuggingFace dataset ids used (when ``datasets`` + network are available):
+- ifeval        : ``google/IFEval``
 - rlpr          : ``openbmb/RLPR-Evaluation``
 - math500       : ``HuggingFaceH4/MATH-500`` (fallback ``qwedsacf/competition_math``)
 - mmlu          : ``cais/mmlu`` (config ``all``)
@@ -31,7 +33,9 @@ The HuggingFace dataset ids used (when ``datasets`` + network are available):
 """
 from __future__ import annotations
 
+import json
 import random
+import urllib.request
 from functools import lru_cache
 from typing import Any
 
@@ -40,6 +44,7 @@ from trinity.types import Task
 __all__ = ["load_tasks", "sample_minibatch", "SUPPORTED_BENCHMARKS"]
 
 SUPPORTED_BENCHMARKS: tuple[str, ...] = (
+    "ifeval",
     "rlpr",
     "math500",
     "mmlu",
@@ -49,6 +54,10 @@ SUPPORTED_BENCHMARKS: tuple[str, ...] = (
 
 # Letters used for multiple-choice option indexing (MMLU/GPQA).
 _CHOICE_LETTERS: tuple[str, ...] = ("A", "B", "C", "D", "E", "F", "G", "H")
+_IFEVAL_RAW_URL = (
+    "https://raw.githubusercontent.com/google-research/google-research/06076564b3311330f3560e8cfba86d359bec31af/"
+    "instruction_following_eval/data/input_data.jsonl"
+)
 _RLPR_FILE_SPECS: dict[str, dict[str, str]] = {
     "Math-500_Avg2.parquet": {"kind": "math", "data_source": "Math-500_Avg2"},
     "Minerva_Avg4.parquet": {"kind": "math", "data_source": "Minerva_Avg4"},
@@ -137,6 +146,29 @@ def _row_get(row: Any, *keys: str, default: Any = None) -> Any:
 
 
 @lru_cache(maxsize=None)
+def _fetch_jsonl_rows(url: str) -> list[dict[str, Any]] | None:
+    """Fetch a JSONL file from ``url`` and return parsed rows, or ``None``."""
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            text = response.read().decode("utf-8")
+    except Exception:
+        return None
+
+    rows: list[dict[str, Any]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except Exception:
+            return None
+        if isinstance(item, dict):
+            rows.append(item)
+    return rows or None
+
+
+@lru_cache(maxsize=None)
 def _try_load_parquet(url: str) -> Any | None:
     """Attempt ``datasets.load_dataset('parquet', ...)`` against a single URL."""
     try:
@@ -149,29 +181,49 @@ def _try_load_parquet(url: str) -> Any | None:
         return None
 
 
-def _render_rlpr_prompt(messages: Any) -> str:
-    """Render RLPR chat-style prompts into a flat text transcript."""
-    parts: list[str] = []
-    if isinstance(messages, list):
-        for msg in messages:
-            role = str(_row_get(msg, "role", default="")).strip().upper()
-            content = str(_row_get(msg, "content", default="")).strip()
-            if not content:
-                continue
-            if role:
-                parts.append(f"{role}: {content}")
-            else:
-                parts.append(content)
-    else:
-        text = str(messages or "").strip()
-        if text:
-            parts.append(text)
-    return "\n\n".join(parts).strip()
-
-
 # --------------------------------------------------------------------------- #
 # Per-benchmark HuggingFace parsers (return list[Task] or None on failure)
 # --------------------------------------------------------------------------- #
+def _load_ifeval_hf(split: str) -> list[Task] | None:
+    """Load the official IFEval prompt set from the Google Research repo.
+
+    The upstream file does not ship separate train/test splits, so the logical
+    ``split`` is intentionally ignored here. The parameter stays in the loader
+    signature so this module remains consistent with the other benchmark
+    loaders and with any future split-aware wrapper.
+    """
+    rows = _fetch_jsonl_rows(_IFEVAL_RAW_URL)
+    if not rows:
+        return None
+
+    tasks: list[Task] = []
+    for i, row in enumerate(rows):
+        prompt = str(_row_get(row, "prompt", default="")).strip()
+        instruction_id_list = list(_row_get(row, "instruction_id_list", default=[]))
+        kwargs = list(_row_get(row, "kwargs", default=[]))
+        if not prompt or not instruction_id_list:
+            continue
+        tasks.append(
+            Task(
+                task_id=str(_row_get(row, "key", default=f"ifeval-{i}")),
+                benchmark="ifeval",
+                prompt=prompt,
+                answer={
+                    "instruction_id_list": instruction_id_list,
+                    "kwargs": kwargs,
+                    "prompt": prompt,
+                    "source": "google-research/google-research",
+                    "key": _row_get(row, "key"),
+                },
+                meta={
+                    "source": "google-research/google-research",
+                    "key": _row_get(row, "key"),
+                },
+            )
+        )
+    return tasks or None
+
+
 def _load_rlpr_hf(split: str) -> list[Task] | None:
     """Load the RLPR evaluation suite from the official parquet files.
 
@@ -264,9 +316,27 @@ def _load_math500_hf(split: str) -> list[Task] | None:
     return tasks or None
 
 
+def _mmlu_split_for_split(split: str) -> str:
+    """Map a logical split onto a real ``cais/mmlu`` split name.
+
+    ``cais/mmlu`` has NO split named ``train`` — its splits are ``auxiliary_train``
+    (the designated training pool, same row schema as ``test``), ``dev``,
+    ``validation``, and ``test``. Requesting ``split="train"`` (as ``train.py``
+    does) therefore fails to load and silently falls back to the 2-item toy set.
+    Map ``train`` -> ``auxiliary_train`` and pass the real split names through.
+    """
+    s = (split or "").strip().lower()
+    if s in ("train", "auxiliary_train"):
+        return "auxiliary_train"
+    if s in ("dev", "validation", "val"):
+        return "validation" if s.startswith("val") else s
+    # Default / eval / anything else -> the graded test split.
+    return "test"
+
+
 def _load_mmlu_hf(split: str) -> list[Task] | None:
     """MMLU loader. answer = correct option LETTER ("A".."D")."""
-    ds = _try_load_hf("cais/mmlu", name="all", split=split or "test")
+    ds = _try_load_hf("cais/mmlu", name="all", split=_mmlu_split_for_split(split))
     if ds is None:
         return None
     tasks: list[Task] = []
@@ -590,46 +660,42 @@ def _toy_tasks(benchmark: str) -> list[Task]:
                 meta={"source": "toy"},
             ),
         ]
-    if benchmark == "rlpr":
+    if benchmark == "ifeval":
         return [
             Task(
-                task_id="rlpr-toy-0",
-                benchmark="rlpr",
-                prompt=(
-                    "SYSTEM: A conversation between User and Assistant. The user asks a question, "
-                    "and the Assistant solves it. The assistant first thinks about the reasoning process "
-                    "in the mind and then provides the user with the answer. The reasoning process and "
-                    "answer are enclosed within <think> </think> and <answer> </answer> tags.\n\n"
-                    "USER: Convert the point (0,3) in rectangular coordinates to polar coordinates."
-                ),
+                task_id="ifeval-toy-0",
+                benchmark="ifeval",
+                prompt="Write exactly two paragraphs. Do not use commas.",
                 answer={
-                    "ground_truth": r"\left( 3, \frac{\pi}{2} \right)",
-                    "source": "Math-500_Avg2",
-                    "style": "rule",
-                    "ability": "math",
-                    "extra_info": {"split": "test"},
+                    "instruction_id_list": [
+                        "length_constraints:number_paragraphs",
+                        "punctuation:no_comma",
+                    ],
+                    "kwargs": [{"num_paragraphs": 2}, {}],
+                    "prompt": "Write exactly two paragraphs. Do not use commas.",
+                    "source": "toy",
+                    "key": "ifeval-toy-0",
                 },
-                meta={"source": "toy", "data_source": "Math-500_Avg2", "kind": "math"},
+                meta={
+                    "source": "toy",
+                    "instruction_id_list": [
+                        "length_constraints:number_paragraphs",
+                        "punctuation:no_comma",
+                    ],
+                },
             ),
             Task(
-                task_id="rlpr-toy-1",
-                benchmark="rlpr",
-                prompt=(
-                    "SYSTEM: A conversation between User and Assistant. The user asks a question, "
-                    "and the Assistant solves it. The assistant first thinks about the reasoning process "
-                    "in the mind and then provides the user with the answer. The reasoning process and "
-                    "answer are enclosed within <think> </think> and <answer> </answer> tags.\n\n"
-                    "USER: Complete the sentence. Body temperature on the average is 98.6°F. "
-                    "What is this on the Celsius scale and the Kelvin scale?"
-                ),
+                task_id="ifeval-toy-1",
+                benchmark="ifeval",
+                prompt='Reply with a short answer in double quotation marks.',
                 answer={
-                    "ground_truth": "A",
-                    "source": "MMLUPro-1000_Avg2",
-                    "style": "rule",
-                    "ability": "mmlu_pro",
-                    "extra_info": {"split": None},
+                    "instruction_id_list": ["startend:quotation"],
+                    "kwargs": [{}],
+                    "prompt": 'Reply with a short answer in double quotation marks.',
+                    "source": "toy",
+                    "key": "ifeval-toy-1",
                 },
-                meta={"source": "toy", "data_source": "MMLUPro-1000_Avg2", "kind": "choice"},
+                meta={"source": "toy", "instruction_id_list": ["startend:quotation"]},
             ),
         ]
     raise ValueError(
@@ -638,6 +704,7 @@ def _toy_tasks(benchmark: str) -> list[Task]:
 
 
 _HF_LOADERS = {
+    "ifeval": _load_ifeval_hf,
     "rlpr": _load_rlpr_hf,
     "math500": _load_math500_hf,
     "mmlu": _load_mmlu_hf,
