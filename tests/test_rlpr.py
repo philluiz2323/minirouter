@@ -108,3 +108,22 @@ def test_rlpr_reward_scores_math_and_choice_sources():
     )
     assert R.score_text("rlpr", "The answer is (A).", choice_reference) == 1.0
     assert R.score_text("rlpr", "The answer is (B).", choice_reference) == 0.0
+
+
+def test_rlpr_webinstruct_uses_generic_matching():
+    reference = {
+        "ground_truth": "42",
+        "source": "WebInstruct-verified-val_Avg2",
+    }
+
+    assert R.score_text("rlpr", "42", reference) == 1.0
+    assert R.score_text("rlpr", "41", reference) == 0.0
+
+
+def test_rlpr_train_split_is_blocked():
+    try:
+        D.load_tasks("rlpr", "train", max_items=None, seed=0)
+    except ValueError as exc:
+        assert "evaluation-only" in str(exc)
+    else:
+        raise AssertionError("expected rlpr train split to be rejected")

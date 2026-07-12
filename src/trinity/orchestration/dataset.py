@@ -65,9 +65,16 @@ _RLPR_MATH_SOURCES: frozenset[str] = frozenset(
     {spec["data_source"] for spec in _RLPR_FILE_SPECS.values() if spec["kind"] == "math"}
 )
 _RLPR_CHOICE_SOURCES: frozenset[str] = frozenset(
-    {spec["data_source"] for spec in _RLPR_FILE_SPECS.values() if spec["kind"] == "choice"}
+    {
+        spec["data_source"]
+        for spec in _RLPR_FILE_SPECS.values()
+        if spec["kind"] == "choice" and spec["data_source"] != "WebInstruct-verified-val_Avg2"
+    }
 )
-_RLPR_RAW_BASE = "https://huggingface.co/datasets/openbmb/RLPR-Evaluation/resolve/main/"
+_RLPR_RAW_BASE = (
+    "https://huggingface.co/datasets/openbmb/RLPR-Evaluation/resolve/"
+    "cd6b36bbecba006a8d25fedf634567ea37f9a512/"
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -168,10 +175,15 @@ def _render_rlpr_prompt(messages: Any) -> str:
 def _load_rlpr_hf(split: str) -> list[Task] | None:
     """Load the RLPR evaluation suite from the official parquet files.
 
-    The dataset is a multi-benchmark evaluation suite, so the logical ``split``
-    is ignored. Each row already carries the source benchmark in ``data_source``
+    The dataset is a multi-benchmark evaluation suite and is evaluation-only in
+    this repo. The source rows already carry the benchmark in ``data_source``
     and benchmark-specific metadata in ``extra_info`` / ``reward_model``.
     """
+    logical_split = (split or "").strip().lower()
+    if logical_split not in {"test", "eval", "validation", "valid"}:
+        raise ValueError(
+            "rlpr is evaluation-only; use split='test'/'eval' instead of a training split"
+        )
     tasks: list[Task] = []
     for filename, spec in _RLPR_FILE_SPECS.items():
         ds = _try_load_parquet(_RLPR_RAW_BASE + filename)

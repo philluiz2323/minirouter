@@ -74,8 +74,9 @@ _RLPR_MATH_SOURCES: frozenset[str] = frozenset(
     {"Math-500_Avg2", "Minerva_Avg4", "AIME2024_Avg16", "TheoremQA_Avg2"}
 )
 _RLPR_CHOICE_SOURCES: frozenset[str] = frozenset(
-    {"MMLUPro-1000_Avg2", "gpqa_diamond_Avg4", "WebInstruct-verified-val_Avg2"}
+    {"MMLUPro-1000_Avg2", "gpqa_diamond_Avg4"}
 )
+_RLPR_WEBINSTRUCT_SOURCES: frozenset[str] = frozenset({"WebInstruct-verified-val_Avg2"})
 
 
 # ---------------------------------------------------------------------------
@@ -525,10 +526,32 @@ def _check_rlpr(candidate: str, reference: object) -> bool:
         return _check_math(candidate, gold)
     if source in _RLPR_CHOICE_SOURCES:
         return _check_choice(candidate, gold)
+    if source in _RLPR_WEBINSTRUCT_SOURCES:
+        return _check_rlpr_webinstruct(candidate, gold)
 
     if _normalize_reference_letter(gold) is not None:
         return _check_choice(candidate, gold)
     return _check_math(candidate, gold)
+
+
+def _check_rlpr_webinstruct(candidate: str, reference: object) -> bool:
+    """WebInstruct-verified-val mixes answer styles, so score it generically."""
+    if reference is None:
+        return False
+    gold = str(reference).strip()
+    cand = (candidate or "").strip()
+    if not cand or not gold:
+        return False
+
+    gold_letter = _normalize_reference_letter(gold)
+    cand_letter = extract_choice_letter(cand)
+    if gold_letter is not None and cand_letter is not None:
+        return cand_letter == gold_letter
+
+    if math_equal(cand, gold):
+        return True
+
+    return normalize_math_answer(cand) == normalize_math_answer(gold)
 
 
 def _normalize_reference_letter(reference: object) -> str | None:

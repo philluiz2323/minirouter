@@ -1040,3 +1040,11 @@ Implemented a new `rlpr` benchmark loader/facade for the OpenBMB RLPR-Evaluation
   file (`Math-500`, `Minerva`, `AIME2024`, `TheoremQA` vs `MMLUPro`, `gpqa_diamond`, `WebInstruct`).
 
 This suite is mixed-format, so the benchmark itself is the routing layer rather than a single scorer.
+
+## 2026-07-12 — RLPR review fixes  #decision #repro
+
+Addressed PR 104 review feedback for `rlpr`:
+
+- pinned the Hugging Face source snapshot for `openbmb/RLPR-Evaluation`
+- made `WebInstruct-verified-val_Avg2` score generically instead of forcing choice-only routing
+- blocked training-split loading so `rlpr` stays evaluation-only in this repo
