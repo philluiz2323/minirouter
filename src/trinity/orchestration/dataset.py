@@ -25,7 +25,7 @@ The HuggingFace dataset ids used (when ``datasets`` + network are available):
 - math500       : ``HuggingFaceH4/MATH-500`` (fallback ``qwedsacf/competition_math``)
 - mmlu          : ``cais/mmlu`` (config ``all``)
 - gpqa          : ``Idavidrein/gpqa`` (config ``gpqa_diamond``)
-- livecodebench : ``livecodebench/code_generation_lite`` (V1 train / V6 eval)
+- livecodebench : ``lighteval/code_generation_lite`` (V1 train / V6 eval; parquet mirror)
 """
 from __future__ import annotations
 
@@ -55,6 +55,7 @@ def _try_load_hf(
     *,
     name: str | None = None,
     split: str | None = None,
+    version_tag: str | None = None,
 ) -> Any | None:
     """Attempt ``datasets.load_dataset``; return ``None`` on any failure.
 
@@ -81,7 +82,14 @@ def _try_load_hf(
     except Exception:
         return None
     try:
-        return load_dataset(path, name=name, split=split)
+        kwargs: dict[str, Any] = {}
+        if name is not None:
+            kwargs["name"] = name
+        if split is not None:
+            kwargs["split"] = split
+        if version_tag is not None:
+            kwargs["version_tag"] = version_tag
+        return load_dataset(path, **kwargs)
     except Exception:
         return None
 
@@ -133,9 +141,27 @@ def _load_math500_hf(split: str) -> list[Task] | None:
     return tasks or None
 
 
+def _mmlu_split_for_split(split: str) -> str:
+    """Map a logical split onto a real ``cais/mmlu`` split name.
+
+    ``cais/mmlu`` has NO split named ``train`` — its splits are ``auxiliary_train``
+    (the designated training pool, same row schema as ``test``), ``dev``,
+    ``validation``, and ``test``. Requesting ``split="train"`` (as ``train.py``
+    does) therefore fails to load and silently falls back to the 2-item toy set.
+    Map ``train`` -> ``auxiliary_train`` and pass the real split names through.
+    """
+    s = (split or "").strip().lower()
+    if s in ("train", "auxiliary_train"):
+        return "auxiliary_train"
+    if s in ("dev", "validation", "val"):
+        return "validation" if s.startswith("val") else s
+    # Default / eval / anything else -> the graded test split.
+    return "test"
+
+
 def _load_mmlu_hf(split: str) -> list[Task] | None:
     """MMLU loader. answer = correct option LETTER ("A".."D")."""
-    ds = _try_load_hf("cais/mmlu", name="all", split=split or "test")
+    ds = _try_load_hf("cais/mmlu", name="all", split=_mmlu_split_for_split(split))
     if ds is None:
         return None
     tasks: list[Task] = []
@@ -225,14 +251,22 @@ def _load_livecodebench_hf(split: str) -> list[Task] | None:
          "starter_code": str | None}
     """
     version = _lcb_version_for_split(split)
-    ds = _try_load_hf(
-        "livecodebench/code_generation_lite",
-        name=version,
-        split="test",
-    )
-    if ds is None:
-        # Some mirrors expose the version via `split` rather than config name.
-        ds = _try_load_hf("livecodebench/code_generation_lite", split=version)
+    # The original livecodebench repo still ships a loading script, which modern
+    # `datasets` versions reject. Prefer the parquet-backed mirror first.
+    candidates: list[tuple[str, dict[str, str]]] = [
+        ("lighteval/code_generation_lite", {"name": version, "split": "test"}),
+        ("lighteval/code_generation_lite", {"split": version}),
+        ("sam-paech/livecodebench-code_generation_lite", {"split": version}),
+        ("livecodebench/code_generation_lite", {"name": version, "split": "test"}),
+        ("livecodebench/code_generation_lite", {"split": version}),
+    ]
+    ds = None
+    src = "lighteval/code_generation_lite"
+    for path, kwargs in candidates:
+        ds = _try_load_hf(path, **kwargs)
+        if ds is not None:
+            src = path
+            break
     if ds is None:
         return None
     tasks: list[Task] = []
@@ -254,7 +288,7 @@ def _load_livecodebench_hf(split: str) -> list[Task] | None:
                     "starter_code": _row_get(row, "starter_code"),
                 },
                 meta={
-                    "source": "livecodebench/code_generation_lite",
+                    "source": src,
                     "version": version,
                     "platform": _row_get(row, "platform"),
                     "difficulty": _row_get(row, "difficulty"),
