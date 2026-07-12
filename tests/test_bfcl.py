@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import benchmarks.bfcl as BFCL
+import benchmarks.bfcl_simple as BFCL
 import trinity.orchestration.dataset as D
 import trinity.orchestration.reward as R
 
@@ -17,7 +17,7 @@ def test_bfcl_facade_delegates(monkeypatch):
     out = BFCL.load("test", max_items=3, seed=7)
 
     assert out == ["ok"]
-    assert seen["args"] == ("bfcl", "test", 3, 7)
+    assert seen["args"] == ("bfcl_simple", "test", 3, 7)
 
 
 def test_bfcl_hf_row_parses_to_task(monkeypatch):
@@ -55,11 +55,11 @@ def test_bfcl_hf_row_parses_to_task(monkeypatch):
 
     monkeypatch.setattr(D, "_fetch_jsonl_rows", fake_fetch_jsonl_rows)
 
-    tasks = D.load_tasks("bfcl", "test", max_items=None, seed=0)
+    tasks = D.load_tasks("bfcl_simple", "test", max_items=None, seed=0)
 
     assert len(tasks) == 1
     task = tasks[0]
-    assert task.benchmark == "bfcl"
+    assert task.benchmark == "bfcl_simple"
     assert task.task_id == "simple_python_0"
     assert task.meta["category"] == "simple_python"
     assert task.answer["ground_truth"] == answer_rows[0]["ground_truth"]
@@ -87,5 +87,5 @@ def test_bfcl_reward_scores_matching_json_call():
         '"arguments":{"base":10,"height":6,"unit":"units"}}'
     )
 
-    assert R.score_text("bfcl", candidate, reference) == 1.0
-    assert R.score_text("bfcl", wrong, reference) == 0.0
+    assert R.score_text("bfcl_simple", candidate, reference) == 1.0
+    assert R.score_text("bfcl_simple", wrong, reference) == 0.0

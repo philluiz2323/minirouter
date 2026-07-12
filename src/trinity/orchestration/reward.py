@@ -11,7 +11,7 @@ Supported benchmarks
     Extract a ``\\boxed{...}`` answer (else the last number) from the final
     answer, normalize, and compare to ``task.answer``. Symbolic equality via
     ``sympy`` when importable, otherwise a numeric/string fallback.
-* ``bfcl``
+* ``bfcl_simple``
     Parse a JSON function-call payload and compare it against the ground-truth
     call schema stored in ``task.answer``.
 * ``mmlu`` / ``gpqa``
@@ -69,7 +69,7 @@ CHOICE_BENCHMARKS: frozenset[str] = frozenset({"mmlu", "gpqa", "gpqa-diamond", "
 CODE_BENCHMARKS: frozenset[str] = frozenset(
     {"livecodebench", "lcb", "bigcodebench", "bigcode"}
 )
-BFCL_BENCHMARKS: frozenset[str] = frozenset({"bfcl"})
+BFCL_BENCHMARKS: frozenset[str] = frozenset({"bfcl_simple"})
 
 
 # ---------------------------------------------------------------------------

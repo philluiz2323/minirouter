@@ -11,7 +11,7 @@ Design constraints (see docs/SPEC.md §6, §8):
 - ``load_tasks`` is deterministic given ``seed``: shuffling/truncation use a seeded
   ``random.Random`` so two calls with the same arguments return identical lists.
 - The ``answer`` field is whatever ``reward.score`` needs for that benchmark:
-    * bfcl          -> a JSON-serializable ground-truth function-call schema
+    * bfcl_simple   -> a JSON-serializable ground-truth function-call schema
     * math500 / aime  -> reference answer string (boxed-answer / last-number match)
     * mmlu / gpqa     -> the correct option LETTER ("A".."D")
     * livecodebench   -> a dict test spec {"tests": [...], "fn_name": ...}
@@ -23,7 +23,7 @@ Public API
 - ``SUPPORTED_BENCHMARKS`` (tuple[str, ...])
 
 The HuggingFace dataset ids used (when ``datasets`` + network are available):
-- bfcl          : BFCL v4 JSON files from the official Gorilla repository
+- bfcl_simple   : BFCL v4 single-turn JSON files from the official Gorilla repository
 - math500       : ``HuggingFaceH4/MATH-500`` (fallback ``qwedsacf/competition_math``)
 - mmlu          : ``cais/mmlu`` (config ``all``)
 - gpqa          : ``Idavidrein/gpqa`` (config ``gpqa_diamond``)
@@ -42,7 +42,7 @@ from trinity.types import Task
 __all__ = ["load_tasks", "sample_minibatch", "SUPPORTED_BENCHMARKS"]
 
 SUPPORTED_BENCHMARKS: tuple[str, ...] = (
-    "bfcl",
+    "bfcl_simple",
     "math500",
     "mmlu",
     "gpqa",
@@ -56,13 +56,6 @@ _BFCL_SUPPORTED_FILES: tuple[str, ...] = (
     "BFCL_v4_simple_python.json",
     "BFCL_v4_simple_javascript.json",
     "BFCL_v4_simple_java.json",
-    "BFCL_v4_multiple.json",
-    "BFCL_v4_parallel.json",
-    "BFCL_v4_parallel_multiple.json",
-    "BFCL_v4_live_simple.json",
-    "BFCL_v4_live_multiple.json",
-    "BFCL_v4_live_parallel.json",
-    "BFCL_v4_live_parallel_multiple.json",
 )
 _BFCL_FILE_TO_CATEGORY: dict[str, str] = {
     name: name.removeprefix("BFCL_v4_").removesuffix(".json") for name in _BFCL_SUPPORTED_FILES
@@ -159,18 +152,7 @@ def _fetch_jsonl_rows(url: str) -> list[dict[str, Any]] | None:
 def _bfcl_categories_for_split(split: str) -> list[str]:
     s = (split or "").strip().lower()
     if s in {"simple", "single", "single_turn"}:
-        return [
-            "BFCL_v4_simple_python.json",
-            "BFCL_v4_simple_javascript.json",
-            "BFCL_v4_simple_java.json",
-        ]
-    if s in {"live"}:
-        return [
-            "BFCL_v4_live_simple.json",
-            "BFCL_v4_live_multiple.json",
-            "BFCL_v4_live_parallel.json",
-            "BFCL_v4_live_parallel_multiple.json",
-        ]
+        return list(_BFCL_SUPPORTED_FILES)
     # Default: the single-turn BFCL v4 suite that is fully comparable as one-shot
     # function-call output.
     return list(_BFCL_SUPPORTED_FILES)
@@ -239,9 +221,9 @@ def _load_bfcl_hf(split: str) -> list[Task] | None:
             functions = list(_row_get(row, "function", default=[]))
             ground_truth = gold.get("ground_truth", [])
             tasks.append(
-                Task(
-                    task_id=row_id,
-                    benchmark="bfcl",
+            Task(
+                task_id=row_id,
+                benchmark="bfcl_simple",
                     prompt=_format_bfcl_prompt(question, functions, category),
                     answer={
                         "ground_truth": ground_truth,
@@ -621,11 +603,11 @@ def _toy_tasks(benchmark: str) -> list[Task]:
                 meta={"source": "toy"},
             ),
         ]
-    if benchmark == "bfcl":
+    if benchmark == "bfcl_simple":
         return [
             Task(
                 task_id="bfcl-toy-0",
-                benchmark="bfcl",
+                benchmark="bfcl_simple",
                 prompt=(
                     "You can use calculate_triangle_area(base, height, unit) to "
                     "compute triangle area. Return only the JSON function call."
@@ -659,7 +641,7 @@ def _toy_tasks(benchmark: str) -> list[Task]:
 
 
 _HF_LOADERS = {
-    "bfcl": _load_bfcl_hf,
+    "bfcl_simple": _load_bfcl_hf,
     "math500": _load_math500_hf,
     "mmlu": _load_mmlu_hf,
     "gpqa": _load_gpqa_hf,

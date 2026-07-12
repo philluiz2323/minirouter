@@ -1029,10 +1029,11 @@ Per user request (document everything + structured output):
 - Cost ~$22 (ledger-tracked). No GPU was empty (other tenants), but evals are light (~4 GB) so they
   coexist on a shared H200.
 
-## 2026-07-10 — BFCL benchmark wiring added  #decision #repro
+## 2026-07-10 — BFCL simple-slice benchmark wiring added  #decision #repro
 
-Implemented a new `bfcl` benchmark loader/facade:
-- BFCL loads the official v4 JSONL question/answer files directly from the Gorilla repo raw URLs.
-- Reward support is now routed through `trinity.orchestration.reward.score_text` for BFCL.
+Implemented a new `bfcl_simple` benchmark loader/facade:
+- BFCL loads only the official v4 single-turn JSONL question/answer files directly from the Gorilla repo raw URLs.
+- Reward support is now routed through `trinity.orchestration.reward.score_text` for `bfcl_simple`.
 
-Scoring is exact JSON function-call matching against the official ground-truth schema.
+Scoring is exact JSON function-call matching against the official ground-truth schema. Multi-turn/live BFCL
+categories remain out of scope until the loader preserves full dialogue context.
