@@ -12,10 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from ..core.config import Settings
-from ..models import AdminUser, EvaluationRun, JobQueue, Submission, TrainRun
+from ..models import AdminUser, CompetitionRuntimeConfig, EvaluationRun, JobQueue, Submission, TrainRun
 from ..schemas import (
     AdminLoginRequest,
     AdminLoginResponse,
+    AdminRuntimeConfigOut,
+    AdminRuntimeConfigUpdate,
     AdminLogoutResponse,
     AdminMeResponse,
     EvaluationOut,
@@ -35,6 +37,11 @@ from ..services.admin_auth import (
     create_admin_session,
     revoke_admin_token,
     verify_password,
+)
+from ..services.runtime_config import (
+    apply_runtime_defaults,
+    get_runtime_config,
+    update_runtime_config,
 )
 from ..services.eval_runner import evaluate_submission
 from ..services.github import create_pr_submission
@@ -305,6 +312,23 @@ def get_session(request: Request) -> Session:
     return request.app.state.session_factory()
 
 
+def _runtime_settings(session: Session, settings: Settings) -> Settings:
+    runtime = get_runtime_config(session, settings)
+    return apply_runtime_defaults(settings, runtime)
+
+
+def _runtime_config_to_schema(session: Session, settings: Settings) -> AdminRuntimeConfigOut:
+    runtime = get_runtime_config(session, settings)
+    row = session.get(CompetitionRuntimeConfig, 1)
+    return AdminRuntimeConfigOut(
+        benchmark_names=list(runtime.benchmark_names),
+        eval_max_items=runtime.eval_max_items,
+        eval_provider=runtime.eval_provider,
+        eval_models_config=runtime.eval_models_config,
+        updated_at=row.updated_at if row is not None else None,
+    )
+
+
 def _ensure_webhook_secret_configured(secret: str) -> str:
     configured = (secret or "").strip()
     if not configured or configured == "replace-me":
@@ -355,12 +379,14 @@ async def submit(
         )
     session = get_session(request)
     try:
+        runtime = get_runtime_config(session, settings)
+        runtime_settings = apply_runtime_defaults(settings, runtime)
         submission_id = str(uuid4())
         artifact = store_upload(file, settings, submission_id)
         if repo_full_name and pr_number is not None:
             submission = create_pr_submission(
                 session,
-                settings,
+                runtime_settings,
                 repo_full_name=repo_full_name,
                 pr_number=pr_number,
                 head_sha=head_sha,
@@ -372,7 +398,7 @@ async def submit(
                 id=submission_id,
                 source="upload",
                 miner_id=_safe_team_name(request, team_name),
-                benchmark_names_json=[settings.eval_benchmark],
+                benchmark_names_json=list(runtime.benchmark_names),
                 status="queued",
             )
             session.add(submission)
@@ -398,7 +424,7 @@ async def submit(
             enqueue_submission_pipeline_job(
                 session,
                 submission,
-                settings,
+                runtime_settings,
                 payload_json={
                     "submission_id": submission.id,
                     "benchmark_names": submission.benchmark_names_json,
@@ -410,7 +436,7 @@ async def submit(
 
         if settings.sync_eval_on_submit and not settings.uses_train_pipeline:
             session.refresh(submission)
-            evaluate_submission(session, submission, settings)
+            evaluate_submission(session, submission, runtime_settings)
             session.commit()
 
         session.refresh(submission)
@@ -438,11 +464,12 @@ def create_train_job(
 ) -> TrainCreateResponse:
     session = get_session(request)
     try:
+        runtime = get_runtime_config(session, settings)
         submission = session.get(Submission, payload.submission_id) if payload.submission_id else None
         train = TrainRun(
             submission_id=payload.submission_id,
             source="manual",
-            benchmark_names_json=payload.benchmark_names or [settings.train_benchmark],
+            benchmark_names_json=payload.benchmark_names or list(runtime.benchmark_names),
             warmstart_artifact_id=payload.warmstart_artifact_id,
             status="queued",
             phase="queued",
@@ -474,6 +501,8 @@ async def github_webhook(request: Request, settings: Settings = Depends(get_sett
     payload: dict[str, Any] = json.loads(raw_body.decode("utf-8")) if raw_body else {}
     session = get_session(request)
     try:
+        runtime = get_runtime_config(session, settings)
+        runtime_settings = apply_runtime_defaults(settings, runtime)
         repository = payload.get("repository") or {}
         repo_full_name = repository.get("full_name")
         if repo_full_name and repo_full_name != settings.allowed_repo:
@@ -485,7 +514,7 @@ async def github_webhook(request: Request, settings: Settings = Depends(get_sett
         team_name = payload.get("sender", {}).get("login")
         submission = create_pr_submission(
             session,
-            settings,
+            runtime_settings,
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             head_sha=head_sha,
@@ -526,9 +555,11 @@ async def github_submission_upload(
     _verify_shared_secret(request.headers.get("x-minirouter-webhook-secret"), settings.github_webhook_secret)
     session = get_session(request)
     try:
+        runtime = get_runtime_config(session, settings)
+        runtime_settings = apply_runtime_defaults(settings, runtime)
         submission = create_pr_submission(
             session,
-            settings,
+            runtime_settings,
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             head_sha=head_sha,
@@ -739,6 +770,45 @@ def admin_me(
     user: AdminUser = Depends(_require_admin_user),
 ) -> AdminMeResponse:
     return AdminMeResponse(username=user.username)
+
+
+@admin_router.get("/config", response_model=AdminRuntimeConfigOut)
+def admin_get_config(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    user: AdminUser = Depends(_require_admin_user),
+) -> AdminRuntimeConfigOut:
+    session = get_session(request)
+    try:
+        return _runtime_config_to_schema(session, settings)
+    finally:
+        session.close()
+
+
+@admin_router.put("/config", response_model=AdminRuntimeConfigOut)
+def admin_update_config(
+    request: Request,
+    payload: AdminRuntimeConfigUpdate,
+    settings: Settings = Depends(get_settings),
+    user: AdminUser = Depends(_require_admin_user),
+) -> AdminRuntimeConfigOut:
+    session = get_session(request)
+    try:
+        update_runtime_config(
+            session,
+            settings,
+            benchmark_names=payload.benchmark_names,
+            eval_max_items=payload.eval_max_items,
+            eval_provider=payload.eval_provider,
+            eval_models_config=payload.eval_models_config,
+        )
+        session.commit()
+        return _runtime_config_to_schema(session, settings)
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        session.close()
 
 
 @admin_router.get("/leaderboard", response_model=LeaderboardResponse)

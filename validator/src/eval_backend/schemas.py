@@ -189,3 +189,20 @@ class AdminLogoutResponse(BaseModel):
 
 class AdminMeResponse(BaseModel):
     username: str
+
+
+class AdminRuntimeConfigOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    benchmark_names: list[str] = Field(default_factory=list)
+    eval_max_items: int
+    eval_provider: str
+    eval_models_config: str
+    updated_at: datetime | None = None
+
+
+class AdminRuntimeConfigUpdate(BaseModel):
+    benchmark_names: list[str] = Field(default_factory=list)
+    eval_max_items: int = 20
+    eval_provider: str = "chutes"
+    eval_models_config: str = "configs/models.chutes.yaml"

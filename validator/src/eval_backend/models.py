@@ -305,3 +305,27 @@ class AdminSession(Base):
     )
 
     user = relationship("AdminUser", back_populates="sessions")
+
+
+class CompetitionRuntimeConfig(Base):
+    __tablename__ = "competition_runtime_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    default_benchmark_names_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    default_eval_max_items: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    default_eval_provider: Mapped[str] = mapped_column(String(32), nullable=False, default="chutes")
+    default_eval_models_config: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="configs/models.chutes.yaml"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    @property
+    def benchmark_names(self) -> list[str]:
+        return list(self.default_benchmark_names_json or [])
+
+    @benchmark_names.setter
+    def benchmark_names(self, value: list[str]) -> None:
+        self.default_benchmark_names_json = [str(item) for item in value if str(item).strip()]
