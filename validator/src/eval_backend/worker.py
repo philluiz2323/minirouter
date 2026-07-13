@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from .core.config import Settings
@@ -45,23 +45,30 @@ def process_once(session_factory, settings: Settings) -> int:
         runtime_settings = apply_runtime_defaults(settings, get_runtime_config(session, settings))
         review_control = get_review_control(session)
         logger.info("polling for queued jobs")
-        base_stmt = select(JobQueue).outerjoin(Submission, JobQueue.submission_id == Submission.id)
-        queued_stmt = base_stmt.where(JobQueue.status == "queued")
+        queued_stmt = select(JobQueue).where(JobQueue.status == "queued")
         if not review_control.enabled:
-            queued_stmt = queued_stmt.where(
-                or_(Submission.id.is_(None), Submission.source != "github_pr")
+            github_pr_exists = exists(
+                select(1).where(
+                    Submission.id == JobQueue.submission_id,
+                    Submission.source == "github_pr",
+                )
             )
-        queued_stmt = queued_stmt.order_by(
-            case((Submission.source == "github_pr", 0), else_=1),
-            JobQueue.priority.desc(),
-            JobQueue.created_at.asc(),
-            JobQueue.id.asc(),
-        ).with_for_update(skip_locked=True)
-        job = session.execute(queued_stmt).scalars().first()
+            queued_stmt = queued_stmt.where(or_(JobQueue.submission_id.is_(None), ~github_pr_exists))
+        job = (
+            session.execute(
+                queued_stmt.order_by(
+                    JobQueue.priority.desc(),
+                    JobQueue.created_at.asc(),
+                    JobQueue.id.asc(),
+                ).with_for_update(skip_locked=True)
+            )
+            .scalars()
+            .first()
+        )
         if job is None:
             if not review_control.enabled:
                 logger.info("review gate disabled; queued GitHub PR submissions are waiting")
-            logger.info("no eligible queued jobs found")
+            logger.info("no queued jobs found")
             return 0
         job.status = "running"
         job.claimed_by = "worker"
